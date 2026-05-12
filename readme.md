@@ -16,7 +16,7 @@ To Install:
 - Type in your cli:
   
   ```
-  pip install --upgrade openplate --extra-index-url https://pypi.org/simple 
+  pip install "git+ssh://git@github.com/Comcast/OpenPlate.git@pip-latest#egg=openplate&subdirectory=src"
   ```
 ### Security: init commands
 For security, init commands are disabled by default.  In order to run many templates you must run this once:
