@@ -1,0 +1,44 @@
+do not touch this pr or branch
+
+This pull request was created automatically by the Openplate auto-updater.
+
+This PR is intentionally managed by automation. It may be closed and recreated at any time.
+
+What this PR is:
+- An automated update to bring this repository back into alignment with its Openplate templates.
+- The branch and PR are managed by automation and may be deleted/recreated at any time.
+
+What you should do:
+- Do not push commits to the branch `{{BRANCH_NAME}}`.
+- Do not rebase, force-push, or rename the branch.
+- Do not edit this PR title/body.
+
+How it will be completed:
+- Auto-approval is expected to occur via the repo’s existing automation.
+- Auto-merge is enabled (where supported) and will merge once required checks pass.
+
+How to remediate issues with this PR:
+1. Do not push commits to `{{BRANCH_NAME}}` and do not modify this PR.
+2. Review the CI results for this PR:
+	- If checks are passing: no action is required.
+	- If checks are failing: continue with the steps below.
+3. Open the failing check logs and identify the root cause (tests, lint, formatting, build, policy checks, etc.).
+4. Create a new branch from the default branch `{{DEFAULT_BRANCH}}`.
+	- Do not apply the fix on `{{BRANCH_NAME}}`.
+5. From the repository root, run:
+	- `openplate update`
+6. Build and run tests/lint locally (or in your standard dev workflow), then fix any issues.
+7. Push your branch and open a normal PR into `{{DEFAULT_BRANCH}}`.
+8. Remediate any remaining build/test/lint errors reported on your PR until checks pass.
+9. Merge your remediation PR into `{{DEFAULT_BRANCH}}` normally.
+
+After your remediation PR is merged:
+- All outstanding Openplate updates should now be applied.
+- Future Openplate updates should run automatically via the existing auto-updater process.
+
+Details:
+- Default branch: `{{DEFAULT_BRANCH}}`
+- Update branch: `{{BRANCH_NAME}}`
+- Openplate verify hash: `{{OPENPLATE_HASH}}`
+- Run date (UTC): `{{RUN_DATE_UTC}}`
+

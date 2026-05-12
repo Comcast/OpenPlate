@@ -1,0 +1,60 @@
+##
+##             Copyright 2025 Comcast Cable Communications Management, LLC
+##             Licensed under the Apache License, Version 2.0 (the "License");
+##             you may not use this file except in compliance with the License.
+##             You may obtain a copy of the License at
+##
+##             http://www.apache.org/licenses/LICENSE-2.0
+##
+##             Unless required by applicable law or agreed to in writing, software
+##             distributed under the License is distributed on an "AS IS" BASIS,
+##             WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+##             See the License for the specific language governing permissions and
+##             limitations under the License.
+##
+##             SPDX-License-Identifier: Apache-2.0
+##
+FROM alpine:3.21
+ARG SEMANTIC_VERSION
+
+RUN apk update
+RUN apk add --update python3 py3-pip bash openssh git shadow github-cli jq dos2unix
+
+RUN mkdir -p /tmp/build
+
+WORKDIR /tmp/build
+COPY . .
+
+WORKDIR /tmp/build
+
+# get the python package version for openplate
+RUN pip3 install --break-system-packages packaging
+RUN PACKAGE_VERSION=`python3 -c "from packaging.version import Version; print(Version('$SEMANTIC_VERSION'))"`;
+
+# Update Project version file
+ENV initfile="src/openplate/__init__.py"
+RUN cat $initfile | grep -v -E "__version__|__semver__" > "${initfile}.new";
+RUN rm -f $initfile
+RUN mv "${initfile}.new" "$initfile"
+RUN printf "\n__version__ = \"$PACKAGE_VERSION\"\n__semver__ = \"$SEMANTIC_VERSION\"\n\n" >> $initfile;
+
+# build
+RUN pip3 install --break-system-packages .
+RUN rm -rf /tmp/build
+
+
+RUN git config --global user.email "noreply@github.com"
+RUN git config --global user.name "openplate"
+
+WORKDIR /app
+
+# Copies your code file from your action repository to the filesystem path `/` of the container
+COPY ./src/auto-updater/ /app
+
+RUN chmod +x /app/entrypoint.sh
+RUN dos2unix /app/entrypoint.sh
+RUN test -f /app/pr-body.md.tmpl
+RUN dos2unix /app/pr-body.md.tmpl
+
+# Code file to execute when the docker container starts up (`entrypoint.sh`)
+ENTRYPOINT ["/app/entrypoint.sh"]
