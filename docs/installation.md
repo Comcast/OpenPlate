@@ -6,7 +6,7 @@ To Install:
 - Type in your cli:
   
   ```
-  pip install "git+ssh://git@github.com/Comcast/OpenPlate.git@pip-latest#egg=openplate&subdirectory=src"
+  pip install "git+https://github.com/Comcast/OpenPlate.git@main#egg=openplate"
   ```
 
 ## Installation from source
