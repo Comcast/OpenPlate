@@ -17,9 +17,13 @@
 #
 #              This product includes software developed at Comcast (https://www.comcast.com/).#
 import os
+from typing import Optional
 
 from openplate.cfg import project_config
 from openplate.cfg.open_plate_settings import OpenPlateSettings, OpenPlateRuntimeSettings
+from openplate.prompts.prompt_input_logging import log_ignored_prompt_templates
+from openplate.prompts.prompt_document_collector import collect_prompt_document_single
+from openplate.prompts.prompt_document import PromptDocument, PromptInputTracker
 from openplate.walk.source_template_recursive_walk import VerifyWalkOptions, source_template_recursive_walk_single
 
 
@@ -29,7 +33,9 @@ class InitOptions:
         add_template: project_config.ProjectTemplateConfig,
         destination: str,
         overwrite_existing_files: bool,
-        allow_template_commands: bool
+        allow_template_commands: bool,
+        print_prompts_json: bool,
+        prompt_document: Optional[PromptDocument],
     ):
         if add_template is None:
             raise TypeError
@@ -39,6 +45,8 @@ class InitOptions:
         self.destination = destination
         self.overwrite_existing_files = overwrite_existing_files or False
         self.allow_template_commands = allow_template_commands or False
+        self.print_prompts_json = print_prompts_json or False
+        self.prompt_document = prompt_document
 
 
 async def run(
@@ -46,7 +54,8 @@ async def run(
     runtime_settings: OpenPlateRuntimeSettings,
     options: InitOptions,
 ):
-    print(f"Running init on folder: {options.destination} source: {options.add_template.__str__()}")
+    if not options.print_prompts_json:
+        print(f"Running init on folder: {options.destination} source: {options.add_template.__str__()}")
 
     config_project = project_config.from_file(
         settings,
@@ -56,6 +65,21 @@ async def run(
     config_project.templates.append(options.add_template)
 
     allow_template_commands = settings.allow_template_commands or options.allow_template_commands
+
+    if options.print_prompts_json:
+        prompt_document = await collect_prompt_document_single(
+            settings,
+            runtime_settings,
+            options.add_template,
+            options.destination,
+            config_project,
+        )
+        print(prompt_document.to_json_string())
+        return
+
+    prompt_input_tracker = None
+    if options.prompt_document is not None:
+        prompt_input_tracker = PromptInputTracker(options.prompt_document)
 
     await source_template_recursive_walk_single(
         settings,
@@ -74,8 +98,11 @@ async def run(
         True,
         options.overwrite_existing_files,
         True,
-        False
+        options.prompt_document is not None,
+        prompt_input_tracker,
     )
+
+    log_ignored_prompt_templates(prompt_input_tracker)
 
     # Always update config from an init:
     project_config.to_file(

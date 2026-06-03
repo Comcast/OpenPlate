@@ -77,6 +77,48 @@ openplate update
 
 The legacy nested `project` variant still works for compatibility, but `openplate update` is the documented command.
 
+## Prompt JSON Workflow
+
+For machine-driven `init` and `update` runs, OpenPlate can print the prompt state as JSON, let you fill in only the `value` fields you care about, and then consume that JSON without falling back to interactive prompting.
+
+Export the declared prompt tree:
+
+```
+openplate init https://github.com/my-org/ot-template.git#v1 --print-prompts-json
+openplate update --print-prompts-json
+```
+
+Import answers from a file or standard input:
+
+```
+openplate init https://github.com/my-org/ot-template.git#v1 --prompts-json-file prompts.json
+openplate update --prompts-json-file prompts.json
+type prompts.json | openplate init https://github.com/my-org/ot-template.git#v1 --prompts-json-stdin
+```
+
+The printed document is a top-level JSON array grouped by template instance. Each template node includes:
+
+- `template`: the raw template reference for that template instance
+- `dest_folder`: the raw destination-folder string for that template instance
+- `condition`: included when the template declaration has one
+- `parameters`: either an object keyed by parameter name or `null` when OpenPlate cannot inspect that template closely enough to enumerate parameter metadata
+
+Each parameter entry includes `value`, `default`, `existing`, `description`, `choices`, `hidden`, and `required`.
+
+`value` semantics:
+
+- `null` means no answer was supplied in the prompt document
+- `""` means an intentional blank string
+- omitting `value` is invalid on import
+
+Notes:
+
+- `--print-prompts-json` is read-only. It does not update `.openplate.project.yaml` or write template output.
+- `--print-prompts-json` is the only mode that walks the full declared sibling tree without applying sibling `condition` filters.
+- `--prompts-json-file` and `--prompts-json-stdin` stay on the normal runtime walk and fail instead of prompting if required values or template-command confirmations are still unresolved.
+- OpenPlate ignores extra template nodes that are not processed by the run and logs which raw `template` and `dest_folder` entries were ignored.
+- OpenPlate warns when supplied parameter values are left unused for a matched template instance.
+
 ## Command: project verify
 
 Verify that the project has not drifted from the template. Exit with code -1 if so.

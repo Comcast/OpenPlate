@@ -28,17 +28,52 @@ from openplate import __version__ as module_version
 from openplate.cfg import open_plate_settings
 from openplate.cfg.open_plate_settings import OpenPlateRuntimeSettings
 from openplate.cfg.project_config import ProjectTemplateConfig
+from openplate.prompts.prompt_document_cli import add_prompt_document_arguments, load_prompt_document as load_prompt_document_from_args
+#
+#              Copyright 2025 Comcast Cable Communications Management, LLC
+#
+#              Licensed under the Apache License, Version 2.0 (the "License");
+#              you may not use this file except in compliance with the License.
+#              You may obtain a copy of the License at
+#
+#              http://www.apache.org/licenses/LICENSE-2.0
+#
+#              Unless required by applicable law or agreed to in writing, software
+#              distributed under the License is distributed on an "AS IS" BASIS,
+#              WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#              See the License for the specific language governing permissions and
+#              limitations under the License.
+#
+#              SPDX-License-Identifier: Apache-2.0
+#
+#              This product includes software developed at Comcast (https://www.comcast.com/).#
+import argparse
+import asyncio
+import logging
+import os
+import platform
+import sys
+
+from openplate import __semver__ as module_semver
+from openplate import __version__ as module_version
+from openplate.cfg import open_plate_settings
+from openplate.cfg.open_plate_settings import OpenPlateRuntimeSettings
+from openplate.cfg.project_config import ProjectTemplateConfig
 from openplate.commands import (
     config_get,
     config_set,
     project_init,
     project_update,
-    project_verify
+    project_verify,
 )
 from openplate.commands.config_set import ConfigSetOptions
 from openplate.commands.project_init import InitOptions
 from openplate.commands.project_update import UpdateOptions
 from openplate.commands.project_verify import VerifyOptions
+from openplate.prompts.prompt_document_cli import (
+    add_prompt_document_arguments,
+    load_prompt_document as load_prompt_document_from_args,
+)
 
 
 def add_common_project_runtime_arguments(parser):
@@ -79,6 +114,7 @@ def configure_project_init_parser(parser):
         help="One-time override to allow template-provided init_commands to run during this init.",
         action="store_true"
     )
+    add_prompt_document_arguments(parser)
 
 
 def configure_project_update_parser(parser):
@@ -89,6 +125,7 @@ def configure_project_update_parser(parser):
     parser.add_argument("-f", "--update-full",
                         required=False, help="Full update, overwrite existing non-template files (WARNING: will overwrite changes)",
                         action=argparse.BooleanOptionalAction)
+    add_prompt_document_arguments(parser)
 
 
 def configure_project_verify_parser(parser):
@@ -174,6 +211,10 @@ def resolve_project_init_source_reference(result) -> str:
     return source_reference
 
 
+def load_prompt_document(result):
+    return load_prompt_document_from_args(result)
+
+
 async def async_main(args):
     arg_parser = create_arg_parser(args)
 
@@ -209,7 +250,6 @@ async def async_main(args):
     else:
         runtime_settings = OpenPlateRuntimeSettings(False, False, False, result.automation)
 
-    # set-config can run without a valid configuration file
     if result.command == "config-set":
         defaults = {}
 
@@ -235,6 +275,7 @@ async def async_main(args):
     elif result.command == "project-init":
         ignore_paths = result.ignore or []
         source_reference = resolve_project_init_source_reference(result)
+        prompt_document = load_prompt_document(result)
 
         if result.url and not result.source:
             print(
@@ -249,13 +290,27 @@ async def async_main(args):
 
         template = ProjectTemplateConfig(source_reference, None, None, result.dest_folder, None, {}, ignore_paths, no_cache)
 
-        options = InitOptions(template, absolute_project_folder, result.overwrite, result.allow_template_commands)
+        options = InitOptions(
+            template,
+            absolute_project_folder,
+            result.overwrite,
+            result.allow_template_commands,
+            result.print_prompts_json,
+            prompt_document,
+        )
         await project_init.run(configuration, runtime_settings, options)
     elif result.command == "project-verify":
         options = VerifyOptions(absolute_project_folder)
         await project_verify.run(configuration, runtime_settings, options)
     elif result.command == "project-update":
-        options = UpdateOptions(absolute_project_folder, result.update_missing, result.update_full)
+        prompt_document = load_prompt_document(result)
+        options = UpdateOptions(
+            absolute_project_folder,
+            result.update_missing,
+            result.update_full,
+            result.print_prompts_json,
+            prompt_document,
+        )
         await project_update.run(configuration, runtime_settings, options)
     else:
         raise Exception(f"Unknown Command: {result.command}")

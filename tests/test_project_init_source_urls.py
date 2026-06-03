@@ -1,10 +1,29 @@
+#
+#              Copyright 2025 Comcast Cable Communications Management, LLC
+#
+#              Licensed under the Apache License, Version 2.0 (the "License");
+#              you may not use this file except in compliance with the License.
+#              You may obtain a copy of the License at
+#
+#              http://www.apache.org/licenses/LICENSE-2.0
+#
+#              Unless required by applicable law or agreed to in writing, software
+#              distributed under the License is distributed on an "AS IS" BASIS,
+#              WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#              See the License for the specific language governing permissions and
+#              limitations under the License.
+#
+#              SPDX-License-Identifier: Apache-2.0
+#
+#              This product includes software developed at Comcast (https://www.comcast.com/).#
 import asyncio
 import subprocess
+from io import StringIO
 from pathlib import Path
 
 import pytest
 
-from openplate.__main__ import async_main, create_arg_parser, resolve_project_init_source_reference
+from openplate.__main__ import async_main, create_arg_parser, load_prompt_document, resolve_project_init_source_reference
 from openplate.cfg import open_plate_settings
 from openplate.git import GitTemplateReference
 from openplate.sources.url_source import UrlTemplateSource
@@ -79,6 +98,18 @@ def test_create_arg_parser_top_level_help_hides_project_command():
     assert "==SUPPRESS==" not in help_text
 
 
+def test_create_arg_parser_accepts_prompts_json_flags_for_top_level_init():
+    args = ["openplate", "init", "https://example.com/template.git#main", "--print-prompts-json"]
+    parser = create_arg_parser(args)
+
+    result = parser.parse_args(args[1:])
+
+    assert result.command == "project-init"
+    assert result.print_prompts_json is True
+    assert result.prompts_json_file is None
+    assert result.prompts_json_stdin is False
+
+
 def test_resolve_project_init_source_reference_rejects_conflicting_inputs():
     result = create_arg_parser(["openplate", "project", "init"]).parse_args([
         "project", "init", "https://example.com/template.git#main", "-r", "https://example.com/other.git#main"
@@ -86,6 +117,39 @@ def test_resolve_project_init_source_reference_rejects_conflicting_inputs():
 
     with pytest.raises(ValueError, match="Specify exactly one template source URL"):
         resolve_project_init_source_reference(result)
+
+
+def test_load_prompt_document_rejects_multiple_input_sources():
+    result = create_arg_parser(["openplate", "project", "update"]).parse_args([
+        "project", "update", "--prompts-json-file", "prompts.json", "--prompts-json-stdin"
+    ])
+
+    with pytest.raises(ValueError, match="Specify only one prompts JSON input source"):
+        load_prompt_document(result)
+
+
+def test_load_prompt_document_rejects_print_mode_with_input_file(tmp_path):
+    prompts_json = tmp_path / "prompts.json"
+    prompts_json.write_text("[]", encoding="utf-8")
+
+    result = create_arg_parser(["openplate", "project", "update"]).parse_args([
+        "project", "update", "--print-prompts-json", "--prompts-json-file", str(prompts_json)
+    ])
+
+    with pytest.raises(ValueError, match="cannot be combined"):
+        load_prompt_document(result)
+
+
+def test_load_prompt_document_reads_json_from_stdin(monkeypatch):
+    result = create_arg_parser(["openplate", "project", "update"]).parse_args([
+        "project", "update", "--prompts-json-stdin"
+    ])
+    monkeypatch.setattr("sys.stdin", StringIO("[]"))
+
+    document = load_prompt_document(result)
+
+    assert document is not None
+    assert document.templates == []
 
 
 def test_create_arg_parser_rejects_removed_name_option():
@@ -134,6 +198,64 @@ def test_async_main_warns_when_using_legacy_r_flag(monkeypatch, capsys, tmp_path
 
     captured = capsys.readouterr()
     assert "deprecated" in captured.err
+
+
+def test_async_main_passes_prompt_document_to_project_update(monkeypatch, tmp_path):
+    captured_options = {}
+
+    async def fake_run(_settings, _runtime_settings, options):
+        captured_options["print_prompts_json"] = options.print_prompts_json
+        captured_options["prompt_document"] = options.prompt_document
+
+    monkeypatch.setattr("openplate.commands.project_update.run", fake_run)
+
+    prompts_json = tmp_path / "prompts.json"
+    prompts_json.write_text("[]", encoding="utf-8")
+
+    args = [
+        "openplate",
+        "-c",
+        str(tmp_path / "missing-config.yaml"),
+        "project",
+        "--project-folder",
+        str(tmp_path),
+        "update",
+        "--prompts-json-file",
+        str(prompts_json),
+    ]
+
+    asyncio.run(async_main(args))
+
+    assert captured_options["print_prompts_json"] is False
+    assert captured_options["prompt_document"] is not None
+    assert captured_options["prompt_document"].templates == []
+
+
+def test_async_main_passes_print_prompts_json_to_project_init(monkeypatch, tmp_path):
+    captured_options = {}
+
+    async def fake_run(_settings, _runtime_settings, options):
+        captured_options["print_prompts_json"] = options.print_prompts_json
+        captured_options["prompt_document"] = options.prompt_document
+
+    monkeypatch.setattr("openplate.commands.project_init.run", fake_run)
+
+    args = [
+        "openplate",
+        "-c",
+        str(tmp_path / "missing-config.yaml"),
+        "project",
+        "--project-folder",
+        str(tmp_path),
+        "init",
+        "https://example.com/template.git#main",
+        "--print-prompts-json",
+    ]
+
+    asyncio.run(async_main(args))
+
+    assert captured_options["print_prompts_json"] is True
+    assert captured_options["prompt_document"] is None
 
 
 def test_git_template_reference_parses_query_path_and_ref():
