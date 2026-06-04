@@ -168,6 +168,9 @@ def describe_prompt_parameters(
     result = {}
 
     for parameter in config_template.parameters:
+        if parameter.hidden and not runtime_settings.ask_hidden:
+            continue
+
         existing_value, default_value = resolve_parameter_defaults(
             settings,
             runtime_settings,

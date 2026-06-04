@@ -14,6 +14,7 @@ This change needs to cross the CLI parser, prompt resolver, and recursive templa
 - Scope prompt answers to a template instance using the template reference and destination folder, with parameters nested under that template node.
 - During `--print-prompts-json`, walk the full declared template tree without applying sibling `condition` filters.
 - Include template `condition` metadata in printed JSON when present, but ignore it during import.
+- Scope hidden parameters to `--ask-hidden` on both prompt export and prompt import.
 - Distinguish incomplete parameter discovery from truly parameterless templates in the printed JSON document.
 - Reuse fetched template sources within a single command invocation so validation/discovery does not clone the same template source twice.
 - Preserve current console-style error reporting while adding always-on warnings for extra supplied parameters and always-on ignored-template log messages.
@@ -62,15 +63,20 @@ When `parameters` is an object, each parameter entry will include:
 - `required`
 
 `value` semantics are explicit:
-- `null` means no value has been supplied for this parameter in the prompt document
-- `""` means an explicit blank string value
+- `null` means no answer has been supplied for this parameter, so normal runtime fallback still applies if that parameter is reached
+- `""` means an explicit blank string answer
+- any other non-null `value` is the authoritative supplied answer for that parameter when the parameter is in scope for the command
 - omission of the `value` field in an imported parameter entry is invalid
 
 `required` is derived from current OpenPlate prompt behavior: a parameter is required when it has no resolved existing value, no resolved default value, and therefore would fail if JSON-input mode reaches it without a supplied value.
 
+Hidden parameters are part of the prompt document only when `--ask-hidden` is active for that command. Without `--ask-hidden`, hidden parameters are omitted from `--print-prompts-json` output and ignored during JSON import.
+
 If print-mode discovery can enumerate a template declaration but cannot load that template's config closely enough to discover parameter metadata during export, OpenPlate will still emit the template node using the preserved raw `template`, `dest_folder`, and optional `condition`, and it will emit `parameters` as `null`.
 
-Import will accept the same structure. During import, OpenPlate will use only the template identity fields and each parameter's `value`. A template node with `parameters: null` is treated as having no supplied parameter values. Other fields are treated as export metadata and ignored if returned, including `condition`.
+Import will accept the same structure. During import, OpenPlate will use only the template identity fields and each parameter's `value`. A template node with `parameters: null` is treated as having no supplied parameter values. Other fields are treated as informational export metadata and ignored for import semantics, including `condition`, `default`, `existing`, `description`, `choices`, `hidden`, and `required`.
+
+For parameters that are in scope for the command, a non-null JSON `value` overrides runtime fallback even when the template already has an existing value or interactive mode would not have re-prompted that parameter. `--ask-again` continues to control interactive re-prompting, but it does not block a non-null supplied JSON answer.
 
 Alternatives considered:
 - Use a flat list of parameter rows. Rejected because it duplicates template identity on every entry and makes sibling targeting harder to read.
@@ -96,7 +102,7 @@ OpenPlate will validate supplied JSON against the actual template instances that
 
 - If supplied JSON contains a duplicate template node, OpenPlate errors before processing.
 - If supplied JSON contains a template node that is never processed, OpenPlate ignores that node and prints an always-on log message identifying the raw `template` and `dest_folder` that were ignored.
-- If supplied JSON contains parameter values that are not needed by the matched template instance, OpenPlate collects warnings and prints them at the end even when debug logging is disabled.
+- If supplied JSON contains parameter values that are not needed by the matched template instance, including hidden parameters supplied without `--ask-hidden`, OpenPlate collects warnings and prints them at the end even when debug logging is disabled.
 
 This approach avoids a larger refactor to fully predict selection outcomes up front, especially for conditions that can depend on config files or later template state.
 
@@ -135,6 +141,7 @@ Alternatives considered:
 - Add the new flags without changing existing interactive init or update flows when the JSON flags are not used.
 - Document the read-only export/import JSON workflow for automation and AI-assisted runs, including that full-tree discovery is print-only, runtime validation uses actual processed templates, and template sources are reused within a command.
 - Keep existing human-readable error messages, with new validation and warning text layered onto the current failure paths.
+- Document hidden-parameter scope, `null` versus non-null `value` semantics, and metadata-only fields directly in the command reference so automation can author prompt JSON without inferring behavior.
 
 ## Open Questions
 

@@ -103,18 +103,29 @@ The printed document is a top-level JSON array grouped by template instance. Eac
 - `condition`: included when the template declaration has one
 - `parameters`: either an object keyed by parameter name or `null` when OpenPlate cannot inspect that template closely enough to enumerate parameter metadata
 
-Each parameter entry includes `value`, `default`, `existing`, `description`, `choices`, `hidden`, and `required`.
+Each exported parameter entry includes `value`, `default`, `existing`, `description`, `choices`, `hidden`, and `required`.
+
+Hidden parameters are included only when the command uses `--ask-hidden`. Without `--ask-hidden`, hidden parameters are omitted from prompt JSON export and ignored on prompt JSON import.
 
 `value` semantics:
 
-- `null` means no answer was supplied in the prompt document
-- `""` means an intentional blank string
+- `null` means do not answer this parameter from JSON; if the parameter is reached, OpenPlate uses the normal runtime fallback such as an existing value or template/default value
+- `""` means an intentional blank string answer
+- any other non-null string means an explicit supplied answer for that parameter
 - omitting `value` is invalid on import
+
+Import semantics:
+
+- OpenPlate uses only `template`, `dest_folder`, and each parameter entry's `value` when importing prompt JSON.
+- `condition`, `default`, `existing`, `description`, `choices`, `hidden`, and `required` are informational metadata on import.
+- For parameters in scope for the command, any non-null `value` is authoritative even if runtime fallback already has an existing or default value.
+- `--ask-again` affects interactive prompting. It does not prevent a non-null prompt JSON `value` from being applied.
 
 Notes:
 
 - `--print-prompts-json` is read-only. It does not update `.openplate.project.yaml` or write template output.
 - `--print-prompts-json` is the only mode that walks the full declared sibling tree without applying sibling `condition` filters.
+- `condition` is included in exported JSON for visibility only and is ignored on import.
 - `--prompts-json-file` and `--prompts-json-stdin` stay on the normal runtime walk and fail instead of prompting if required values or template-command confirmations are still unresolved.
 - OpenPlate ignores extra template nodes that are not processed by the run and logs which raw `template` and `dest_folder` entries were ignored.
 - OpenPlate warns when supplied parameter values are left unused for a matched template instance.
@@ -148,6 +159,8 @@ or
 ```
 openplate update --ask-hidden
 ```
+
+The same flag controls prompt JSON scope. With `--ask-hidden`, hidden parameters are included in `--print-prompts-json` output and may be answered through `--prompts-json-file` or `--prompts-json-stdin`. Without it, hidden parameters are omitted from export and ignored on import.
 
 # Template Branches
 

@@ -200,6 +200,86 @@ require_sibling_templates:
     assert len(shared_nodes) == 1
 
 
+def test_project_init_print_prompts_json_excludes_hidden_parameters_without_ask_hidden(tmp_path, capsys):
+    repo_path = tmp_path / "template"
+    source_url = _write_template_repo(
+        repo_path,
+        """
+parameters:
+  - name: service_name
+    description: Service Name
+  - name: hidden_name
+    description: Hidden Name
+    default: secret
+    hidden: true
+""",
+    )
+    project_path = tmp_path / "project"
+    project_path.mkdir()
+
+    args = [
+        "openplate",
+        "-c",
+        str(tmp_path / "missing-config.yaml"),
+        "project",
+        "--project-folder",
+        str(project_path),
+        "init",
+        source_url,
+        "--dest-folder",
+        ".",
+        "--print-prompts-json",
+    ]
+
+    asyncio.run(async_main(args))
+
+    printed = json.loads(capsys.readouterr().out)
+    root_node = next(node for node in printed if node["template"] == source_url)
+
+    assert "service_name" in root_node["parameters"]
+    assert "hidden_name" not in root_node["parameters"]
+
+
+def test_project_init_print_prompts_json_includes_hidden_parameters_with_ask_hidden(tmp_path, capsys):
+    repo_path = tmp_path / "template"
+    source_url = _write_template_repo(
+        repo_path,
+        """
+parameters:
+  - name: service_name
+    description: Service Name
+  - name: hidden_name
+    description: Hidden Name
+    default: secret
+    hidden: true
+""",
+    )
+    project_path = tmp_path / "project"
+    project_path.mkdir()
+
+    args = [
+        "openplate",
+        "-c",
+        str(tmp_path / "missing-config.yaml"),
+        "project",
+        "--project-folder",
+        str(project_path),
+        "--ask-hidden",
+        "init",
+        source_url,
+        "--dest-folder",
+        ".",
+        "--print-prompts-json",
+    ]
+
+    asyncio.run(async_main(args))
+
+    printed = json.loads(capsys.readouterr().out)
+    root_node = next(node for node in printed if node["template"] == source_url)
+
+    assert root_node["parameters"]["hidden_name"]["hidden"] is True
+
+
 def test_project_update_print_prompts_json_preserves_raw_sibling_identity_for_existing_template(tmp_path, capsys, monkeypatch):
     repo_path = tmp_path / "template"
     source_url = _write_template_repo(
@@ -489,6 +569,213 @@ parameters:
 
     written_config = yaml.safe_load((project_path / project_config.project_config_file_name).read_text(encoding="utf-8"))
     assert written_config["templates"][0]["parameters"]["service_name"] == "demo"
+
+
+def test_project_init_json_mode_uses_supplied_value_for_existing_sibling_parameter(tmp_path, caplog, monkeypatch):
+    child_repo_path = tmp_path / "child-template"
+    child_source_url = _write_template_repo(
+        child_repo_path,
+        """
+parameters:
+  - name: artifact_name
+    description: Artifact Name
+""",
+    )
+    root_repo_path = tmp_path / "root-template"
+    root_source_url = _write_template_repo(
+        root_repo_path,
+        f"""
+parameters:
+  - name: service_name
+    description: Service Name
+require_sibling_templates:
+  - template_url: "{child_source_url}"
+    dest_folder: "child"
+    parameters:
+      artifact_name: "{{{{ service_name }}}}"
+""",
+    )
+    project_path = tmp_path / "project"
+    project_path.mkdir()
+
+    prompts_path = tmp_path / "prompts.json"
+    prompts_path.write_text(
+        json.dumps(
+            [
+                {
+                    "template": root_source_url,
+                    "dest_folder": ".",
+                    "parameters": {
+                        "service_name": {"value": "demo"},
+                    },
+                },
+                {
+                    "template": child_source_url,
+                    "dest_folder": "child",
+                    "parameters": {
+                        "artifact_name": {"value": "override"},
+                    },
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    async def fake_walk_init(*_args, **_kwargs):
+        return []
+
+    async def fake_walk_update(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr("openplate.walk.source_template_recursive_walk.walk_init", fake_walk_init)
+    monkeypatch.setattr("openplate.walk.source_template_recursive_walk.walk_update", fake_walk_update)
+
+    args = [
+        "openplate",
+        "-c",
+        str(tmp_path / "missing-config.yaml"),
+        "project",
+        "--project-folder",
+        str(project_path),
+        "init",
+        root_source_url,
+        "--dest-folder",
+        ".",
+        "--prompts-json-file",
+        str(prompts_path),
+    ]
+
+    with caplog.at_level(logging.WARNING):
+        asyncio.run(async_main(args))
+
+    written_config = yaml.safe_load((project_path / project_config.project_config_file_name).read_text(encoding="utf-8"))
+    child_template = next(
+        template
+        for template in written_config["templates"]
+        if template["src_url"] == child_source_url and template["dest_folder"] == "child"
+    )
+
+    assert child_template["parameters"]["artifact_name"] == "override"
+    assert not any(
+        "Ignoring unused supplied prompt parameter" in record.message and "artifact_name" in record.message
+        for record in caplog.records
+    )
+
+
+def test_project_init_json_mode_ignores_hidden_value_without_ask_hidden(tmp_path, caplog):
+    repo_path = tmp_path / "template"
+    source_url = _write_template_repo(
+        repo_path,
+        """
+parameters:
+  - name: service_name
+    description: Service Name
+    default: demo
+  - name: hidden_name
+    description: Hidden Name
+    default: secret
+    hidden: true
+""",
+    )
+    project_path = tmp_path / "project"
+    project_path.mkdir()
+
+    prompts_path = tmp_path / "prompts.json"
+    prompts_path.write_text(
+        json.dumps(
+            [
+                {
+                    "template": source_url,
+                    "dest_folder": ".",
+                    "parameters": {
+                        "hidden_name": {"value": "override"},
+                    },
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    args = [
+        "openplate",
+        "-c",
+        str(tmp_path / "missing-config.yaml"),
+        "project",
+        "--project-folder",
+        str(project_path),
+        "init",
+        source_url,
+        "--dest-folder",
+        ".",
+        "--prompts-json-file",
+        str(prompts_path),
+    ]
+
+    with caplog.at_level(logging.WARNING):
+        asyncio.run(async_main(args))
+
+    written_config = yaml.safe_load((project_path / project_config.project_config_file_name).read_text(encoding="utf-8"))
+    assert written_config["templates"][0]["parameters"]["hidden_name"] == "secret"
+    assert any(
+        "Ignoring unused supplied prompt parameter" in record.message and "hidden_name" in record.message
+        for record in caplog.records
+    )
+
+
+def test_project_init_json_mode_uses_hidden_value_with_ask_hidden(tmp_path):
+    repo_path = tmp_path / "template"
+    source_url = _write_template_repo(
+        repo_path,
+        """
+parameters:
+  - name: service_name
+    description: Service Name
+    default: demo
+  - name: hidden_name
+    description: Hidden Name
+    default: secret
+    hidden: true
+""",
+    )
+    project_path = tmp_path / "project"
+    project_path.mkdir()
+
+    prompts_path = tmp_path / "prompts.json"
+    prompts_path.write_text(
+        json.dumps(
+            [
+                {
+                    "template": source_url,
+                    "dest_folder": ".",
+                    "parameters": {
+                        "hidden_name": {"value": "override"},
+                    },
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    args = [
+        "openplate",
+        "-c",
+        str(tmp_path / "missing-config.yaml"),
+        "project",
+        "--project-folder",
+        str(project_path),
+        "--ask-hidden",
+        "init",
+        source_url,
+        "--dest-folder",
+        ".",
+        "--prompts-json-file",
+        str(prompts_path),
+    ]
+
+    asyncio.run(async_main(args))
+
+    written_config = yaml.safe_load((project_path / project_config.project_config_file_name).read_text(encoding="utf-8"))
+    assert written_config["templates"][0]["parameters"]["hidden_name"] == "override"
 
 
 def test_project_init_fails_when_required_value_remains_unresolved_in_json_mode(tmp_path):

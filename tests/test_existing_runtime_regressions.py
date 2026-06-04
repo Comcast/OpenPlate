@@ -25,6 +25,7 @@ import pytest
 
 from openplate import project_config_resolver
 from openplate.__main__ import async_main
+from openplate.cfg import template_config
 from openplate.cfg.open_plate_settings import OpenPlateRuntimeSettings, defaultSettings
 from openplate.cfg.project_config import ProjectConfig, ProjectTemplateConfig, project_config_file_name
 from openplate.cfg.template_config import TemplateConfig, TemplateConfigParameter
@@ -255,3 +256,22 @@ def test_project_config_does_not_persist_raw_prompt_identity_fields(tmp_path):
     assert "raw_template_reference" not in template_data
     assert "raw_dest_folder" not in template_data
     assert "raw_condition" not in template_data
+
+
+def test_template_config_accepts_legacy_conditional_file_field():
+    config = template_config.deserialize_project_config(
+        {
+            "parameters": [],
+            "conditional": [
+                {
+                    "file": "src/demo/aws-lambda-tools-defaults.json",
+                    "condition": "{{ include_lambda }}",
+                }
+            ],
+        }
+    )
+
+    assert config.conditional is not None
+    assert len(config.conditional) == 1
+    assert config.conditional[0].location == "src/demo/aws-lambda-tools-defaults.json"
+    assert config.conditional[0].condition == "{{ include_lambda }}"

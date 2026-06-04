@@ -9,11 +9,13 @@ OpenPlate SHALL support `--print-prompts-json` for `project init` and `project u
 
 Each template node SHALL include `template`, `dest_folder`, and `parameters`. If the template declaration includes a condition, the node SHALL also include `condition`. Template and destination values in this JSON SHALL use the raw templated strings rather than rendered values.
 
-When OpenPlate can inspect a declared template node closely enough to enumerate parameter metadata during `--print-prompts-json`, `parameters` SHALL be an object keyed by parameter name. Each parameter entry SHALL include `value`, `default`, `existing`, `description`, `choices`, `hidden`, and `required` so the printed document can be edited and sent back through the import flow.
+When OpenPlate can inspect a declared template node closely enough to enumerate parameter metadata during `--print-prompts-json`, `parameters` SHALL be an object keyed by parameter name. Each parameter entry SHALL include `value`, `default`, `existing`, `description`, `choices`, `hidden`, and `required` so the printed document can be edited and sent back through the import flow. Hidden parameters SHALL be included only when `--ask-hidden` is active for that command.
 
 If print-mode discovery can enumerate a template declaration but cannot load that template's config closely enough to discover parameter metadata during export, OpenPlate SHALL still include the template node and SHALL emit `parameters` as `null`.
 
 In printed and imported parameter entries, `value: null` SHALL mean no value has been supplied, `value: ""` SHALL mean an explicit blank string, and omission of the `value` field SHALL be invalid on import.
+
+For parameters that are included in the prompt document for a command, all metadata fields other than `value` SHALL be informational only.
 
 #### Scenario: Print prompts JSON for init
 - **WHEN** a user runs `openplate project init <source> --print-prompts-json`
@@ -39,6 +41,14 @@ In printed and imported parameter entries, `value: null` SHALL mean no value has
 - **WHEN** a template declaration includes a `condition`
 - **THEN** OpenPlate includes that raw `condition` string in the printed JSON node
 - **AND** the printed `condition` field is treated as informational metadata rather than required input
+
+#### Scenario: Hidden parameters are omitted from export without ask-hidden
+- **WHEN** a user runs `openplate project init <source> --print-prompts-json` without `--ask-hidden`
+- **THEN** OpenPlate omits hidden parameters from exported `parameters` objects
+
+#### Scenario: Hidden parameters are included in export with ask-hidden
+- **WHEN** a user runs `openplate project init <source> --ask-hidden --print-prompts-json`
+- **THEN** OpenPlate includes hidden parameters in exported `parameters` objects
 
 ### Requirement: OpenPlate accepts prompt answers from JSON without prompting
 OpenPlate SHALL support `--prompts-json-file <path>` and `--prompts-json-stdin` for `project init` and `project update`. When either flag is used, OpenPlate MUST consume prompt answers from the provided JSON document and MUST NOT fall back to interactive prompting.
@@ -80,6 +90,12 @@ OpenPlate SHALL match supplied prompt answers to template instances using the pa
 
 During import, OpenPlate MUST use each parameter entry's `value` field as the supplied answer. Other metadata fields in template nodes and parameter entries MAY be present and MUST be ignored for import semantics.
 
+During import, `value: null` MUST mean that OpenPlate does not answer that parameter from JSON and instead uses the normal runtime fallback for that parameter if it is reached.
+
+During import, any non-null `value`, including `""`, MUST be treated as the authoritative supplied answer for that parameter when the parameter is in scope for the command, even when runtime fallback already has an existing or default value.
+
+During import, hidden parameters MUST be in scope only when `--ask-hidden` is active for that command. Hidden values supplied without `--ask-hidden` MUST be ignored as unused supplied parameters.
+
 During import, a template node with `parameters: null` MUST be treated as having no supplied parameter values.
 
 During import, OpenPlate MUST reject a parameter entry that omits the `value` field.
@@ -95,6 +111,11 @@ If a supplied template node does not correspond to a template instance that is a
 - **THEN** OpenPlate accepts the document as prompt input
 - **AND** OpenPlate ignores unchanged metadata fields such as `condition`, `description`, `default`, and `existing`
 
+#### Scenario: Null value uses runtime fallback
+- **WHEN** a supplied JSON parameter entry sets `value` to `null`
+- **THEN** OpenPlate does not answer that parameter from JSON
+- **AND** OpenPlate uses the normal runtime fallback for that parameter if it is reached
+
 #### Scenario: Omitted value field is invalid
 - **WHEN** a supplied JSON parameter entry omits the `value` field
 - **THEN** OpenPlate fails validation for the imported prompt document
@@ -102,6 +123,15 @@ If a supplied template node does not correspond to a template instance that is a
 #### Scenario: Blank string is treated as an explicit value
 - **WHEN** a supplied JSON parameter entry sets `value` to `""`
 - **THEN** OpenPlate treats that parameter as explicitly supplied with a blank string value
+
+#### Scenario: Non-null value overrides existing fallback
+- **WHEN** a supplied JSON parameter entry sets `value` to a non-null string for a parameter that already has an existing runtime value
+- **THEN** OpenPlate uses the supplied JSON value for that parameter
+
+#### Scenario: Hidden value is ignored without ask-hidden
+- **WHEN** a supplied JSON document sets `value` for a hidden parameter and the command does not use `--ask-hidden`
+- **THEN** OpenPlate ignores that supplied hidden value
+- **AND** OpenPlate warns that the supplied parameter was unused
 
 #### Scenario: Duplicate template entries in supplied JSON
 - **WHEN** a supplied JSON document contains two template nodes with the same `template` and `dest_folder`

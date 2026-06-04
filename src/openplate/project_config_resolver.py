@@ -19,6 +19,7 @@
 import logging
 from typing import Optional
 
+from openplate import template_processor
 from openplate.cfg import template_config, project_config
 from openplate.cfg.open_plate_settings import OpenPlateRuntimeSettings, OpenPlateSettings
 from openplate.cfg.template_config import TemplateConfigParameter
@@ -30,6 +31,7 @@ from openplate.prompts.prompt_parameter_resolver import (
     resolve_runtime_parameter_fallback,
     try_resolve_parameter_without_prompt,
 )
+from openplate.template_processor import compile_template_options
 
 
 def resolve_parameter_hidden_state(
@@ -99,6 +101,11 @@ def resolve_parameter(
         template_base_folder,
         parameter,
     )
+
+    # Auto answer case, hidden:
+    if parameter.hidden and not runtime_settings.ask_hidden:
+        logging.debug(f"not prompting for hidden parameter[{parameter.name}]")
+        return False, fallback_value
 
     resolved_answer = try_resolve_parameter_without_prompt(
         config_project_template,

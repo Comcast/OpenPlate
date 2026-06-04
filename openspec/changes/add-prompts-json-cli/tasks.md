@@ -13,6 +13,7 @@
 - [x] 2.3 Deduplicate exported template nodes by raw `(template, dest_folder)` using first-match behavior so exported JSON remains valid input.
 - [x] 2.4 Thread imported prompt values into parameter resolution so JSON input uses parameter `value` fields, distinguishes `null` from `""`, rejects omitted `value` fields, and never falls back to interactive prompting.
 - [x] 2.5 Ensure JSON-input modes stay on the normal runtime walk, fail on unresolved parameters or template-command confirmations instead of prompting, and do not switch to the print-only full-tree discovery behavior.
+- [x] 2.6 Scope hidden parameters to `--ask-hidden` on prompt export and prompt import, while treating non-null JSON `value` fields as authoritative for in-scope parameters regardless of existing/default runtime fallback.
 
 ## 3. Validation, warnings, and coverage
 
@@ -20,3 +21,5 @@
 - [x] 3.2 Preserve the existing first-match runtime behavior for duplicate discovered sibling templates while keeping export deduplication and import validation strict for duplicate supplied template nodes.
 - [x] 3.3 Add focused tests for read-only prompt JSON export, print-only full-tree export without applying conditions, `parameters: null` declaration nodes, export deduplication, JSON import from file and stdin, duplicate-template validation, ignored-template log messages, omitted-value failures, blank-string handling, unused-parameter warnings, single-fetch reuse, and unresolved-value failure paths.
 - [x] 3.4 Update command documentation with the JSON round-trip workflow for machine-driven `project init` and `project update`.
+- [x] 3.5 Add focused tests for hidden-parameter export scoping, hidden JSON import scoping, and authoritative non-null JSON overrides of existing runtime values.
+- [x] 3.6 Clarify the OpenSpec artifacts and docs so `null`, non-null `value`, metadata-only fields, and `--ask-hidden` scope are all explicit.
