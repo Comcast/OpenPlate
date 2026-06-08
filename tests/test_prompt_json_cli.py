@@ -877,3 +877,85 @@ require_sibling_templates:
     ]
     assert len(child_templates) == 1
     assert child_templates[0]["parameters"]["artifact_name"] == "override"
+
+
+def test_project_init_json_mode_uses_raw_dest_identity_for_dynamic_sibling_dest(tmp_path, caplog, monkeypatch):
+    child_repo_path = tmp_path / "child-template"
+    child_source_url = _write_template_repo(
+        child_repo_path,
+        """
+parameters:
+  - name: artifact_name
+    description: Artifact Name
+""",
+    )
+    root_repo_path = tmp_path / "root-template"
+    root_source_url = _write_template_repo(
+        root_repo_path,
+        f"""
+parameters:
+  - name: service_name
+    description: Service Name
+require_sibling_templates:
+  - template_url: "{child_source_url}"
+    dest_folder: "child/{{{{ service_name }}}}"
+    parameters:
+      artifact_name: "{{{{ service_name }}}}"
+""",
+    )
+    project_path = tmp_path / "project"
+    project_path.mkdir()
+    prompts_path = tmp_path / "prompts.json"
+    prompts_path.write_text(
+        json.dumps(
+            [
+                {
+                    "node-id": _node_id(root_source_url, "."),
+                    "answers": {
+                        "service_name": "demo",
+                    },
+                },
+                {
+                    "node-id": _node_id(child_source_url, "child/{{ service_name }}"),
+                    "answers": {
+                        "artifact_name": "override",
+                    },
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    async def fake_walk_init(*_args, **_kwargs):
+        return []
+
+    async def fake_walk_update(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr("openplate.walk.source_template_recursive_walk.walk_init", fake_walk_init)
+    monkeypatch.setattr("openplate.walk.source_template_recursive_walk.walk_update", fake_walk_update)
+
+    args = [
+        "openplate",
+        "-c",
+        str(tmp_path / "missing-config.yaml"),
+        "project",
+        "--project-folder",
+        str(project_path),
+        "init",
+        root_source_url,
+        "--prompts-json-file",
+        str(prompts_path),
+    ]
+
+    with caplog.at_level(logging.WARNING):
+        asyncio.run(async_main(args))
+
+    written_config = yaml.safe_load((project_path / project_config.project_config_file_name).read_text(encoding="utf-8"))
+    child_templates = [
+        template for template in written_config["templates"]
+        if template["src_url"] == child_source_url and template["dest_folder"] == "child/demo"
+    ]
+    assert len(child_templates) == 1
+    assert child_templates[0]["parameters"]["artifact_name"] == "override"
+    assert "Ignoring supplied prompt template because it was not processed" not in caplog.text

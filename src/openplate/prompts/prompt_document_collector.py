@@ -24,7 +24,7 @@ from openplate.cfg import project_config, template_config
 from openplate.cfg.open_plate_settings import OpenPlateRuntimeSettings, OpenPlateSettings
 from openplate.cfg.project_config import ProjectTemplateConfig
 from openplate.project_metadata_resolver import resolve_project_metadata
-from openplate.project_template_identity import prompt_dest_folder, prompt_template_reference, source_cache_key
+from openplate.project_template_identity import prompt_dest_folder, prompt_identity_dest_folder, prompt_template_reference, source_cache_key
 from openplate.prompts.prompt_document import PromptDocument, PromptDocumentBuilder, PromptSiblingTemplateInfo
 from openplate.prompts.prompt_parameter_resolver import describe_prompt_parameters
 from openplate.sibling_template_resolver import copy_template_with_raw_identity, find_matching_template, render_sibling_template_config
@@ -101,6 +101,7 @@ async def _collect_prompt_document_template(
             prompt_dest_folder(config_project_template),
             parameters,
             None,
+            prompt_identity_dest_folder(config_project_template),
         )
         return
 
@@ -161,6 +162,7 @@ async def _collect_prompt_document_template(
         prompt_dest_folder(config_project_template),
         parameters,
         sibling_declarations,
+        prompt_identity_dest_folder(config_project_template),
     )
 
 

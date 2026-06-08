@@ -299,9 +299,13 @@ class PromptDocumentBuilder:
         dest_folder: Optional[str],
         parameters: Optional[dict[str, PromptParameterValue]],
         require_sibling_templates: Optional[list[PromptSiblingTemplateInfo]] = None,
+        identity_dest_folder: Optional[str] = None,
     ):
         normalized_dest_folder = normalize_prompt_dest_folder(dest_folder)
-        full_node_id = full_prompt_node_id(template, normalized_dest_folder)
+        normalized_identity_dest_folder = normalize_prompt_dest_folder(
+            identity_dest_folder if identity_dest_folder is not None else dest_folder
+        )
+        full_node_id = full_prompt_node_id(template, normalized_identity_dest_folder)
         existing_node = self._nodes_by_full_id.get(full_node_id)
         if existing_node is None:
             preferred_short_id = short_prompt_node_id(full_node_id)

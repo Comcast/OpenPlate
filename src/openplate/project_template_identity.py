@@ -60,10 +60,14 @@ def prompt_dest_folder(config_project_template):
     return normalize_prompt_dest_folder(config_project_template.dest_folder)
 
 
+def prompt_identity_dest_folder(config_project_template):
+    return normalize_prompt_dest_folder(config_project_template.raw_dest_folder)
+
+
 def prompt_node_id(config_project_template) -> str:
     return full_prompt_node_id(
         prompt_template_reference(config_project_template),
-        prompt_dest_folder(config_project_template),
+        prompt_identity_dest_folder(config_project_template),
     )
 
 
