@@ -281,7 +281,7 @@ async def async_main(args):
             absolute_project_folder,
             result.overwrite,
             result.allow_template_commands,
-            prompt_document,
+            prompt_document=prompt_document,
         )
         await project_init.run(configuration, runtime_settings, options)
     elif result.command == "project-print-init-json":

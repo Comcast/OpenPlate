@@ -107,17 +107,6 @@ def resolve_parameter(
         logging.debug(f"not prompting for hidden parameter[{parameter.name}]")
         return False, fallback_value
 
-    resolved_answer = try_resolve_parameter_without_prompt(
-        config_project_template,
-        parameter,
-        existing_value,
-        fallback_value if existing_value is None else None,
-        fail_on_prompt,
-        prompt_input_tracker,
-    )
-    if resolved_answer is not None:
-        return resolved_answer
-
     effective_hidden = resolve_parameter_hidden_state(
         config_template,
         config_project,
@@ -132,6 +121,17 @@ def resolve_parameter(
     if effective_hidden and not runtime_settings.ask_hidden:
         logging.debug(f"not prompting for hidden parameter[{parameter.name}]")
         return False, fallback_value
+
+    resolved_answer = try_resolve_parameter_without_prompt(
+        config_project_template,
+        parameter,
+        existing_value,
+        fallback_value if existing_value is None else None,
+        fail_on_prompt,
+        prompt_input_tracker,
+    )
+    if resolved_answer is not None:
+        return resolved_answer
 
     # Auto answer case, already answered and not re-asking:
     if not runtime_settings.ask_again and key_exists:

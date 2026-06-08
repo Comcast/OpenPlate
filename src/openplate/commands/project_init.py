@@ -34,7 +34,8 @@ class InitOptions:
         destination: str,
         overwrite_existing_files: bool,
         allow_template_commands: bool,
-        prompt_document: Optional[PromptDocument],
+        print_prompts_json: bool = False,
+        prompt_document: Optional[PromptDocument] = None,
     ):
         if add_template is None:
             raise TypeError
@@ -44,6 +45,7 @@ class InitOptions:
         self.destination = destination
         self.overwrite_existing_files = overwrite_existing_files or False
         self.allow_template_commands = allow_template_commands or False
+        self.print_prompts_json = print_prompts_json or False
         self.prompt_document = prompt_document
 
 

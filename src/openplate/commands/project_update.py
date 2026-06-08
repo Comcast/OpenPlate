@@ -34,12 +34,16 @@ class UpdateOptions:
         destination: str,
         create_non_template_files: bool,
         update_non_template_files: bool,
+        print_prompts_json: bool = False,
+        prompt_document: Optional[PromptDocument] = None,
     ):
         if destination is None:
             raise TypeError
         self.destination = destination
         self.create_non_template_files = create_non_template_files
         self.update_non_template_files = update_non_template_files
+        self.print_prompts_json = print_prompts_json or False
+        self.prompt_document = prompt_document
 
 
 async def run(
