@@ -98,16 +98,26 @@ def test_create_arg_parser_top_level_help_hides_project_command():
     assert "==SUPPRESS==" not in help_text
 
 
-def test_create_arg_parser_accepts_prompts_json_flags_for_top_level_init():
-    args = ["openplate", "init", "https://example.com/template.git#main", "--print-prompts-json"]
+def test_create_arg_parser_accepts_prompts_json_input_flags_for_top_level_init():
+    args = ["openplate", "init", "https://example.com/template.git#main", "--prompts-json-stdin"]
     parser = create_arg_parser(args)
 
     result = parser.parse_args(args[1:])
 
     assert result.command == "project-init"
-    assert result.print_prompts_json is True
     assert result.prompts_json_file is None
-    assert result.prompts_json_stdin is False
+    assert result.prompts_json_stdin is True
+
+
+def test_create_arg_parser_accepts_print_init_json_command():
+    args = ["openplate", "project", "print-init-json", "https://example.com/template.git#main", "--verbose"]
+    parser = create_arg_parser(args)
+
+    result = parser.parse_args(args[1:])
+
+    assert result.command == "project-print-init-json"
+    assert result.source == "https://example.com/template.git#main"
+    assert result.verbose is True
 
 
 def test_resolve_project_init_source_reference_rejects_conflicting_inputs():
@@ -120,29 +130,31 @@ def test_resolve_project_init_source_reference_rejects_conflicting_inputs():
 
 
 def test_load_prompt_document_rejects_multiple_input_sources():
-    result = create_arg_parser(["openplate", "project", "update"]).parse_args([
-        "project", "update", "--prompts-json-file", "prompts.json", "--prompts-json-stdin"
+    result = create_arg_parser(["openplate", "project", "init"]).parse_args([
+        "project", "init", "https://example.com/template.git#main", "--prompts-json-file", "prompts.json", "--prompts-json-stdin"
     ])
 
     with pytest.raises(ValueError, match="Specify only one prompts JSON input source"):
         load_prompt_document(result)
 
 
-def test_load_prompt_document_rejects_print_mode_with_input_file(tmp_path):
-    prompts_json = tmp_path / "prompts.json"
-    prompts_json.write_text("[]", encoding="utf-8")
+def test_create_arg_parser_rejects_removed_update_prompt_json_flags():
+    parser = create_arg_parser(["openplate", "project", "update"])
 
-    result = create_arg_parser(["openplate", "project", "update"]).parse_args([
-        "project", "update", "--print-prompts-json", "--prompts-json-file", str(prompts_json)
-    ])
+    with pytest.raises(SystemExit):
+        parser.parse_args(["project", "update", "--prompts-json-file", "prompts.json"])
 
-    with pytest.raises(ValueError, match="cannot be combined"):
-        load_prompt_document(result)
+
+def test_create_arg_parser_rejects_removed_init_print_flag():
+    parser = create_arg_parser(["openplate", "project", "init"])
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(["project", "init", "https://example.com/template.git#main", "--print-prompts-json"])
 
 
 def test_load_prompt_document_reads_json_from_stdin(monkeypatch):
-    result = create_arg_parser(["openplate", "project", "update"]).parse_args([
-        "project", "update", "--prompts-json-stdin"
+    result = create_arg_parser(["openplate", "project", "init"]).parse_args([
+        "project", "init", "https://example.com/template.git#main", "--prompts-json-stdin"
     ])
     monkeypatch.setattr("sys.stdin", StringIO("[]"))
 
@@ -200,14 +212,13 @@ def test_async_main_warns_when_using_legacy_r_flag(monkeypatch, capsys, tmp_path
     assert "deprecated" in captured.err
 
 
-def test_async_main_passes_prompt_document_to_project_update(monkeypatch, tmp_path):
+def test_async_main_passes_prompt_document_to_project_init(monkeypatch, tmp_path):
     captured_options = {}
 
     async def fake_run(_settings, _runtime_settings, options):
-        captured_options["print_prompts_json"] = options.print_prompts_json
         captured_options["prompt_document"] = options.prompt_document
 
-    monkeypatch.setattr("openplate.commands.project_update.run", fake_run)
+    monkeypatch.setattr("openplate.commands.project_init.run", fake_run)
 
     prompts_json = tmp_path / "prompts.json"
     prompts_json.write_text("[]", encoding="utf-8")
@@ -219,26 +230,27 @@ def test_async_main_passes_prompt_document_to_project_update(monkeypatch, tmp_pa
         "project",
         "--project-folder",
         str(tmp_path),
-        "update",
+        "init",
+        "https://example.com/template.git#main",
         "--prompts-json-file",
         str(prompts_json),
     ]
 
     asyncio.run(async_main(args))
 
-    assert captured_options["print_prompts_json"] is False
     assert captured_options["prompt_document"] is not None
     assert captured_options["prompt_document"].templates == []
 
 
-def test_async_main_passes_print_prompts_json_to_project_init(monkeypatch, tmp_path):
+def test_async_main_dispatches_print_init_json(monkeypatch, tmp_path):
     captured_options = {}
 
-    async def fake_run(_settings, _runtime_settings, options):
-        captured_options["print_prompts_json"] = options.print_prompts_json
-        captured_options["prompt_document"] = options.prompt_document
+    async def fake_print(_settings, _runtime_settings, template, destination, verbose):
+        captured_options["template"] = template
+        captured_options["destination"] = destination
+        captured_options["verbose"] = verbose
 
-    monkeypatch.setattr("openplate.commands.project_init.run", fake_run)
+    monkeypatch.setattr("openplate.commands.project_init.print_prompt_document", fake_print)
 
     args = [
         "openplate",
@@ -247,15 +259,16 @@ def test_async_main_passes_print_prompts_json_to_project_init(monkeypatch, tmp_p
         "project",
         "--project-folder",
         str(tmp_path),
-        "init",
+        "print-init-json",
         "https://example.com/template.git#main",
-        "--print-prompts-json",
+        "--verbose",
     ]
 
     asyncio.run(async_main(args))
 
-    assert captured_options["print_prompts_json"] is True
-    assert captured_options["prompt_document"] is None
+    assert captured_options["template"].src_url == "https://example.com/template.git#main"
+    assert captured_options["destination"] == str(tmp_path.resolve())
+    assert captured_options["verbose"] is True
 
 
 def test_git_template_reference_parses_query_path_and_ref():

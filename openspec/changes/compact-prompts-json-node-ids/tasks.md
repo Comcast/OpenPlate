@@ -1,17 +1,17 @@
 ## 1. Prompt Document Model And Identity
 
-- [ ] 1.1 Replace the prompt document node model so exported and imported nodes use `node-id`, `answers`, and optional `info`, remove all pre-cutover prompt JSON node shapes, and emit at most one node per canonical identity during export.
+- [x] 1.1 Replace the prompt document node model so exported and imported nodes use `node-id`, `answers`, and optional `info`, remove all pre-cutover prompt JSON node shapes, and emit at most one node per canonical identity during export.
 - [ ] 1.2 Normalize `dest_folder` at template ingestion by trimming whitespace and converting `\` to `/`, then compute init-relative destination folders consistently: top-level templates use `default_dest_folder`, which falls back to `.`, sibling declarations require a non-empty `dest_folder`, and the `project init --dest-folder` root is appended only for real output paths and excluded from prompt JSON identity.
-- [ ] 1.3 Add deterministic full-hash node identity generation from canonical raw template-reference plus init-relative normalized destination-folder identity, serialize full hashes as 64-character lowercase hexadecimal strings, prefer the first 7 lowercase hexadecimal characters for short IDs, and implement the export-time short-ID registry with full-hash fallback on collisions.
-- [ ] 1.4 Update prompt input tracking and logging to key nodes by `node-id`, reject duplicate `node-id` entries, and ignore `info` during import matching.
+- [x] 1.3 Add deterministic full-hash node identity generation from canonical raw template-reference plus init-relative normalized destination-folder identity, serialize full hashes as 64-character lowercase hexadecimal strings, prefer the first 7 lowercase hexadecimal characters for short IDs, and implement the export-time short-ID registry with full-hash fallback on collisions.
+- [x] 1.4 Update prompt input tracking and logging to key nodes by `node-id`, reject duplicate `node-id` entries, and ignore `info` during import matching.
 
 ## 2. Export And Import Behavior
 
-- [ ] 2.1 Add `openplate project print-init-json <source>` as the compact prompt export command and support `--verbose` to emit the same nodes plus `info` metadata.
-- [ ] 2.2 Update prompt export collection so `answers` contains discovered in-scope parameter keys initialized to `null`, parameterless reached nodes emit `answers: {}`, hidden parameters still follow `--ask-hidden`, verbose caller metadata emits sibling declaration conditions through caller-side metadata instead of called-node `condition` fields, and export fails instead of emitting partial nodes when prompt discovery cannot complete.
+- [x] 2.1 Add `openplate project print-init-json <source>` as the compact prompt export command and support `--verbose` to emit the same nodes plus `info` metadata.
+- [x] 2.2 Update prompt export collection so `answers` contains discovered in-scope parameter keys initialized to `null`, parameterless reached nodes emit `answers: {}`, hidden parameters still follow `--ask-hidden`, verbose caller metadata emits sibling declaration conditions through caller-side metadata instead of called-node `condition` fields, and export fails instead of emitting partial nodes when prompt discovery cannot complete.
 - [ ] 2.3 Update init JSON import parsing and parameter resolution so the top-level document must be a JSON array of node objects, `answers` is required, `null` and omitted answer keys both defer to runtime fallback, non-null answers remain authoritative, non-string non-null answer values are rejected, non-`node-id` prompt JSON shapes are rejected, and validation/execution reuse the same fetched template source within one command invocation.
 - [ ] 2.4 Implement two-pass import resolution so exact full-hash `node-id` matches claim nodes first, short `node-id` matches resolve only against remaining unclaimed runtime nodes, and invalid `node-id` formats are rejected.
-- [ ] 2.5 Remove `--print-prompts-json`, `--prompts-json-file`, and `--prompts-json-stdin` from `project update`, remove `--print-prompts-json` from `project init`, and ensure legacy flag uses now fail by normal argument parsing because those options are no longer registered on those verbs.
+- [x] 2.5 Remove `--print-prompts-json`, `--prompts-json-file`, and `--prompts-json-stdin` from `project update`, remove `--print-prompts-json` from `project init`, and ensure legacy flag uses now fail by normal argument parsing because those options are no longer registered on those verbs.
 
 ## 3. Validation, Docs, And Artifacts
 

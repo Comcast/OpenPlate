@@ -25,7 +25,7 @@ from openplate.template_processor import compile_template_options
 from openplate.cfg import project_config, template_config
 from openplate.cfg.open_plate_settings import OpenPlateRuntimeSettings, OpenPlateSettings
 from openplate.cfg.template_config import TemplateConfigParameter
-from openplate.project_template_identity import prompt_dest_folder, prompt_template_reference
+from openplate.project_template_identity import prompt_dest_folder, prompt_node_id, prompt_template_reference
 from openplate.prompts.prompt_document import PromptInputTracker, PromptParameterValue
 
 
@@ -182,7 +182,6 @@ def describe_prompt_parameters(
             parameter,
         )
         result[parameter.name] = PromptParameterValue(
-            None,
             default_value,
             existing_value,
             parameter.description,
@@ -206,8 +205,7 @@ def try_resolve_parameter_without_prompt(
 
     if prompt_input_tracker is not None:
         supplied_value, has_supplied_value = prompt_input_tracker.get_parameter_value(
-            prompt_template_reference(config_project_template),
-            prompt_dest_folder(config_project_template),
+            prompt_node_id(config_project_template),
             parameter.name,
         )
         if has_supplied_value and supplied_value is not None:
@@ -229,8 +227,7 @@ def mark_template_used(
         return
 
     prompt_input_tracker.mark_template_used(
-        prompt_template_reference(config_project_template),
-        prompt_dest_folder(config_project_template),
+        prompt_node_id(config_project_template),
     )
 
 
@@ -243,9 +240,11 @@ def log_unused_prompt_parameters(
 
     template_reference = prompt_template_reference(config_project_template)
     dest_folder = prompt_dest_folder(config_project_template)
-    for unused_name in prompt_input_tracker.unused_parameters(template_reference, dest_folder):
+    node_id = prompt_node_id(config_project_template)
+    for unused_name in prompt_input_tracker.unused_parameters(node_id):
         logging.warning(
-            "Ignoring unused supplied prompt parameter for template=%r dest_folder=%r parameter=%r",
+            "Ignoring unused supplied prompt parameter for node-id=%r template=%r dest_folder=%r parameter=%r",
+            node_id,
             template_reference,
             dest_folder,
             unused_name,

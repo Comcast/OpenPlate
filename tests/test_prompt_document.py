@@ -24,66 +24,63 @@ from openplate.prompts.prompt_document import PromptDocument, PromptInputTracker
 pytestmark = pytest.mark.unit
 
 
-def test_prompt_document_rejects_duplicate_template_entries():
+def test_prompt_document_rejects_duplicate_node_ids():
     json_string = """
     [
-      {"template": "repo#main", "dest_folder": ".", "parameters": {}},
-      {"template": "repo#main", "dest_folder": ".", "parameters": {}}
+      {"node-id": "123abcd", "answers": {}},
+      {"node-id": "123abcd", "answers": {}}
     ]
     """
 
-    with pytest.raises(ValueError, match="Duplicate prompt template entry"):
+    with pytest.raises(ValueError, match="Duplicate prompt node entry"):
         PromptDocument.from_json_string(json_string)
 
 
-def test_prompt_document_rejects_missing_parameter_value_field():
+def test_prompt_document_rejects_invalid_node_id_format():
     json_string = """
     [
       {
-        "template": "repo#main",
-        "dest_folder": ".",
-        "parameters": {
-          "service_name": {
-            "default": "demo"
-          }
+        "node-id": "INVALID",
+        "answers": {}
+      }
+    ]
+    """
+
+    with pytest.raises(ValueError, match="valid 'node-id'"):
+        PromptDocument.from_json_string(json_string)
+
+
+def test_prompt_document_rejects_non_string_answer_value():
+    json_string = """
+    [
+      {
+        "node-id": "123abcd",
+        "answers": {
+          "service_name": 123
         }
       }
     ]
     """
 
-    with pytest.raises(ValueError, match="must include a 'value' field"):
+    with pytest.raises(TypeError, match="must be a string or null"):
         PromptDocument.from_json_string(json_string)
 
 
-def test_prompt_document_rejects_non_string_parameter_value():
+def test_prompt_document_rejects_non_boolean_hidden_flag_in_info_metadata():
     json_string = """
     [
       {
-        "template": "repo#main",
-        "dest_folder": ".",
-        "parameters": {
-          "service_name": {
-            "value": 123
-          }
-        }
-      }
-    ]
-    """
-
-    with pytest.raises(TypeError, match="'value' must be a string or null"):
-        PromptDocument.from_json_string(json_string)
-
-
-def test_prompt_document_rejects_non_boolean_hidden_flag():
-    json_string = """
-    [
-      {
-        "template": "repo#main",
-        "dest_folder": ".",
-        "parameters": {
-          "service_name": {
-            "value": null,
-            "hidden": "yes"
+        "node-id": "123abcd",
+        "answers": {
+          "service_name": null
+        },
+        "info": {
+          "template": "repo#main",
+          "dest_folder": ".",
+          "parameters": {
+            "service_name": {
+              "hidden": "yes"
+            }
           }
         }
       }
@@ -94,14 +91,20 @@ def test_prompt_document_rejects_non_boolean_hidden_flag():
         PromptDocument.from_json_string(json_string)
 
 
-def test_prompt_document_round_trips_null_parameters():
+def test_prompt_document_round_trips_verbose_info_metadata():
     json_string = """
     [
       {
-        "template": "repo#main",
-        "dest_folder": ".",
-        "condition": "{{ include_api }}",
-        "parameters": null
+        "node-id": "123abcd",
+        "answers": {
+          "service_name": null
+        },
+        "info": {
+          "template": "repo#main",
+          "dest_folder": ".",
+          "parameters": null,
+          "condition": "{{ include_api }}"
+        }
       }
     ]
     """
@@ -109,26 +112,28 @@ def test_prompt_document_round_trips_null_parameters():
     document = PromptDocument.from_json_string(json_string)
 
     assert document.templates[0].parameters is None
-    assert '"parameters": null' in document.to_json_string()
+    assert '"info"' not in document.to_json_string()
+    assert '"parameters": null' in document.to_json_string(verbose=True)
 
 
-def test_prompt_input_tracker_treats_null_parameters_as_no_supplied_values():
+def test_prompt_input_tracker_treats_null_answer_as_unresolved():
     tracker = PromptInputTracker.from_json_string(
         """
         [
           {
-            "template": "repo#main",
-            "dest_folder": ".",
-            "parameters": null
+            "node-id": "123abcd",
+            "answers": {
+              "service_name": null
+            }
           }
         ]
         """
     )
 
-    value, found = tracker.get_parameter_value("repo#main", ".", "service_name")
+    value, found = tracker.get_parameter_value("123abcd", "service_name")
 
     assert value is None
-    assert found is False
+    assert found is True
 
 
 def test_prompt_input_tracker_reports_unused_supplied_parameters():
@@ -136,39 +141,37 @@ def test_prompt_input_tracker_reports_unused_supplied_parameters():
         """
         [
           {
-            "template": "repo#main",
-            "dest_folder": ".",
-            "parameters": {
-              "used": {"value": "x"},
-              "unused": {"value": "y"},
-              "null_value": {"value": null}
+            "node-id": "123abcd",
+            "answers": {
+              "used": "x",
+              "unused": "y",
+              "null_value": null
             }
           }
         ]
         """
     )
 
-    value, found = tracker.get_parameter_value("repo#main", ".", "used")
+    value, found = tracker.get_parameter_value("123abcd", "used")
 
     assert value == "x"
     assert found is True
-    assert tracker.unused_parameters("repo#main", ".") == ["unused"]
+    assert tracker.unused_parameters("123abcd") == ["unused"]
 
 
-def test_prompt_input_tracker_reports_ignored_templates():
+def test_prompt_input_tracker_reports_ignored_nodes():
     tracker = PromptInputTracker.from_json_string(
         """
         [
-          {"template": "repo#main", "dest_folder": ".", "parameters": {}},
-          {"template": "repo#main", "dest_folder": "src/api", "parameters": {}}
+          {"node-id": "123abcd", "answers": {}},
+          {"node-id": "abcdef0", "answers": {}}
         ]
         """
     )
 
-    tracker.get_template("repo#main", ".")
+    tracker.get_template("123abcd")
 
     ignored = tracker.ignored_templates()
 
     assert len(ignored) == 1
-    assert ignored[0].template == "repo#main"
-    assert ignored[0].dest_folder == "src/api"
+    assert ignored[0].node_id == "abcdef0"

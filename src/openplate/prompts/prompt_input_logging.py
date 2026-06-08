@@ -28,7 +28,8 @@ def log_ignored_prompt_templates(prompt_input_tracker: Optional[PromptInputTrack
 
     for ignored_template in prompt_input_tracker.ignored_templates():
         logging.warning(
-            "Ignoring supplied prompt template because it was not processed: template=%r dest_folder=%r",
+            "Ignoring supplied prompt template because it was not processed: node-id=%r template=%r dest_folder=%r",
+            ignored_template.node_id,
             ignored_template.template,
             ignored_template.dest_folder,
         )

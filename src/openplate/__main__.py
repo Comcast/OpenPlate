@@ -28,37 +28,6 @@ from openplate import __version__ as module_version
 from openplate.cfg import open_plate_settings
 from openplate.cfg.open_plate_settings import OpenPlateRuntimeSettings
 from openplate.cfg.project_config import ProjectTemplateConfig
-from openplate.prompts.prompt_document_cli import add_prompt_document_arguments, load_prompt_document as load_prompt_document_from_args
-#
-#              Copyright 2025 Comcast Cable Communications Management, LLC
-#
-#              Licensed under the Apache License, Version 2.0 (the "License");
-#              you may not use this file except in compliance with the License.
-#              You may obtain a copy of the License at
-#
-#              http://www.apache.org/licenses/LICENSE-2.0
-#
-#              Unless required by applicable law or agreed to in writing, software
-#              distributed under the License is distributed on an "AS IS" BASIS,
-#              WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#              See the License for the specific language governing permissions and
-#              limitations under the License.
-#
-#              SPDX-License-Identifier: Apache-2.0
-#
-#              This product includes software developed at Comcast (https://www.comcast.com/).#
-import argparse
-import asyncio
-import logging
-import os
-import platform
-import sys
-
-from openplate import __semver__ as module_semver
-from openplate import __version__ as module_version
-from openplate.cfg import open_plate_settings
-from openplate.cfg.open_plate_settings import OpenPlateRuntimeSettings
-from openplate.cfg.project_config import ProjectTemplateConfig
 from openplate.commands import (
     config_get,
     config_set,
@@ -71,7 +40,7 @@ from openplate.commands.project_init import InitOptions
 from openplate.commands.project_update import UpdateOptions
 from openplate.commands.project_verify import VerifyOptions
 from openplate.prompts.prompt_document_cli import (
-    add_prompt_document_arguments,
+    add_prompt_document_input_arguments,
     load_prompt_document as load_prompt_document_from_args,
 )
 
@@ -114,7 +83,7 @@ def configure_project_init_parser(parser):
         help="One-time override to allow template-provided init_commands to run during this init.",
         action="store_true"
     )
-    add_prompt_document_arguments(parser)
+    add_prompt_document_input_arguments(parser)
 
 
 def configure_project_update_parser(parser):
@@ -125,7 +94,6 @@ def configure_project_update_parser(parser):
     parser.add_argument("-f", "--update-full",
                         required=False, help="Full update, overwrite existing non-template files (WARNING: will overwrite changes)",
                         action=argparse.BooleanOptionalAction)
-    add_prompt_document_arguments(parser)
 
 
 def configure_project_verify_parser(parser):
@@ -184,6 +152,24 @@ def create_arg_parser(args):
     hide_subparser_from_help(subparsers, "project")
 
     project_subparsers = parser_project.add_subparsers(required=True)
+    parser_print_init_json = project_subparsers.add_parser("print-init-json")
+    parser_print_init_json.set_defaults(command="project-print-init-json")
+    parser_print_init_json.add_argument("source", help="Template source URL")
+    parser_print_init_json.add_argument(
+        "--allow-default-branch",
+        required=False,
+        default=False,
+        help="Allow use of a default branch in a repo reference",
+        action=argparse.BooleanOptionalAction
+    )
+    parser_print_init_json.add_argument(
+        "--verbose",
+        required=False,
+        default=False,
+        help="Include descriptive node metadata in the printed JSON output.",
+        action="store_true"
+    )
+
     legacy_parser_init = project_subparsers.add_parser("init")
     configure_project_init_parser(legacy_parser_init)
 
@@ -197,9 +183,9 @@ def create_arg_parser(args):
 
 
 def resolve_project_init_source_reference(result) -> str:
-    source_reference = result.source or result.url
+    source_reference = result.source or getattr(result, "url", None)
 
-    if result.source and result.url:
+    if result.source and getattr(result, "url", None):
         raise ValueError("Specify exactly one template source URL, either positionally or with -r/--url")
 
     if not source_reference:
@@ -295,21 +281,27 @@ async def async_main(args):
             absolute_project_folder,
             result.overwrite,
             result.allow_template_commands,
-            result.print_prompts_json,
             prompt_document,
         )
         await project_init.run(configuration, runtime_settings, options)
+    elif result.command == "project-print-init-json":
+        source_reference = resolve_project_init_source_reference(result)
+        template = ProjectTemplateConfig(source_reference, None, None, None, None, {}, [], False)
+        await project_init.print_prompt_document(
+            configuration,
+            runtime_settings,
+            template,
+            absolute_project_folder,
+            result.verbose,
+        )
     elif result.command == "project-verify":
         options = VerifyOptions(absolute_project_folder)
         await project_verify.run(configuration, runtime_settings, options)
     elif result.command == "project-update":
-        prompt_document = load_prompt_document(result)
         options = UpdateOptions(
             absolute_project_folder,
             result.update_missing,
             result.update_full,
-            result.print_prompts_json,
-            prompt_document,
         )
         await project_update.run(configuration, runtime_settings, options)
     else:

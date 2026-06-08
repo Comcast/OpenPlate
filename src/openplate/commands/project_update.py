@@ -34,16 +34,12 @@ class UpdateOptions:
         destination: str,
         create_non_template_files: bool,
         update_non_template_files: bool,
-        print_prompts_json: bool,
-        prompt_document: Optional[PromptDocument],
     ):
         if destination is None:
             raise TypeError
         self.destination = destination
         self.create_non_template_files = create_non_template_files
         self.update_non_template_files = update_non_template_files
-        self.print_prompts_json = print_prompts_json or False
-        self.prompt_document = prompt_document
 
 
 async def run(
@@ -51,28 +47,13 @@ async def run(
     runtime_settings: OpenPlateRuntimeSettings,
     options
 ):
-    if not options.print_prompts_json:
-        print(f"Running update on folder: {options.destination}")
-        logging.debug(f"create_non_template_files: {options.create_non_template_files}, update_non_template_files: {options.update_non_template_files}")
+    print(f"Running update on folder: {options.destination}")
+    logging.debug(f"create_non_template_files: {options.create_non_template_files}, update_non_template_files: {options.update_non_template_files}")
 
     config_project = project_config.from_file(
         settings,
         os.path.join(options.destination, project_config.project_config_file_name)
     )
-
-    if options.print_prompts_json:
-        prompt_document = await collect_prompt_document_all(
-            settings,
-            runtime_settings,
-            options.destination,
-            config_project,
-        )
-        print(prompt_document.to_json_string())
-        return
-
-    prompt_input_tracker = None
-    if options.prompt_document is not None:
-        prompt_input_tracker = PromptInputTracker(options.prompt_document)
 
     (config_updated, found_changes, sha) = await source_template_recursive_walk_all(
         settings,
@@ -90,11 +71,9 @@ async def run(
         options.create_non_template_files,
         options.update_non_template_files,
         False,
-        options.prompt_document is not None,
-        prompt_input_tracker,
+        False,
+        None,
     )
-
-    log_ignored_prompt_templates(prompt_input_tracker)
 
     # if config_updated:
 

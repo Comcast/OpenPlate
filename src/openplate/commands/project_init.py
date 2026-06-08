@@ -34,7 +34,6 @@ class InitOptions:
         destination: str,
         overwrite_existing_files: bool,
         allow_template_commands: bool,
-        print_prompts_json: bool,
         prompt_document: Optional[PromptDocument],
     ):
         if add_template is None:
@@ -45,8 +44,30 @@ class InitOptions:
         self.destination = destination
         self.overwrite_existing_files = overwrite_existing_files or False
         self.allow_template_commands = allow_template_commands or False
-        self.print_prompts_json = print_prompts_json or False
         self.prompt_document = prompt_document
+
+
+async def print_prompt_document(
+    settings: OpenPlateSettings,
+    runtime_settings: OpenPlateRuntimeSettings,
+    add_template: project_config.ProjectTemplateConfig,
+    destination: str,
+    verbose: bool,
+):
+    config_project = project_config.from_file(
+        settings,
+        os.path.join(destination, project_config.project_config_file_name)
+    )
+
+    config_project.templates.append(add_template)
+    prompt_document = await collect_prompt_document_single(
+        settings,
+        runtime_settings,
+        add_template,
+        destination,
+        config_project,
+    )
+    print(prompt_document.to_json_string(verbose=verbose))
 
 
 async def run(
@@ -54,8 +75,7 @@ async def run(
     runtime_settings: OpenPlateRuntimeSettings,
     options: InitOptions,
 ):
-    if not options.print_prompts_json:
-        print(f"Running init on folder: {options.destination} source: {options.add_template.__str__()}")
+    print(f"Running init on folder: {options.destination} source: {options.add_template.__str__()}")
 
     config_project = project_config.from_file(
         settings,
@@ -65,17 +85,6 @@ async def run(
     config_project.templates.append(options.add_template)
 
     allow_template_commands = settings.allow_template_commands or options.allow_template_commands
-
-    if options.print_prompts_json:
-        prompt_document = await collect_prompt_document_single(
-            settings,
-            runtime_settings,
-            options.add_template,
-            options.destination,
-            config_project,
-        )
-        print(prompt_document.to_json_string())
-        return
 
     prompt_input_tracker = None
     if options.prompt_document is not None:

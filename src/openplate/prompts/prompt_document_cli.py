@@ -21,14 +21,7 @@ import sys
 from openplate.prompts.prompt_document import PromptDocument
 
 
-def add_prompt_document_arguments(parser):
-    parser.add_argument(
-        "--print-prompts-json",
-        required=False,
-        default=False,
-        help="Print the prompt document as JSON without modifying project state.",
-        action="store_true"
-    )
+def add_prompt_document_input_arguments(parser):
     parser.add_argument(
         "--prompts-json-file",
         required=False,
@@ -48,9 +41,6 @@ def load_prompt_document(result) -> PromptDocument | None:
 
     if prompt_input_flags > 1:
         raise ValueError("Specify only one prompts JSON input source, either --prompts-json-file or --prompts-json-stdin")
-
-    if getattr(result, "print_prompts_json", False) and prompt_input_flags > 0:
-        raise ValueError("--print-prompts-json cannot be combined with --prompts-json-file or --prompts-json-stdin")
 
     if getattr(result, "prompts_json_file", None):
         with open(result.prompts_json_file, encoding="utf-8") as prompts_json_file:

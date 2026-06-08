@@ -24,8 +24,8 @@ from openplate.cfg import project_config, template_config
 from openplate.cfg.open_plate_settings import OpenPlateRuntimeSettings, OpenPlateSettings
 from openplate.cfg.project_config import ProjectTemplateConfig
 from openplate.project_metadata_resolver import resolve_project_metadata
-from openplate.project_template_identity import prompt_condition, prompt_dest_folder, prompt_template_reference, source_cache_key
-from openplate.prompts.prompt_document import PromptDocument, PromptDocumentBuilder
+from openplate.project_template_identity import prompt_dest_folder, prompt_template_reference, source_cache_key
+from openplate.prompts.prompt_document import PromptDocument, PromptDocumentBuilder, PromptSiblingTemplateInfo
 from openplate.prompts.prompt_parameter_resolver import describe_prompt_parameters
 from openplate.sibling_template_resolver import copy_template_with_raw_identity, find_matching_template, render_sibling_template_config
 from openplate.sources.source_cache import CommandTemplateSourceCache, close_command_template_source_cache
@@ -56,14 +56,9 @@ async def _collect_prompt_document_template(
             os.path.join(source.folder_path(), template_config.template_config_file_name)
         )
     except Exception as ex:
-        logging.debug("Unable to fully inspect template for prompt export: %s", ex)
-        prompt_document_builder.add_template(
-            prompt_template_reference(config_project_template),
-            prompt_dest_folder(config_project_template),
-            None,
-            prompt_condition(config_project_template),
-        )
-        return
+        raise RuntimeError(
+            f"Unable to fully inspect template for prompt export: {config_project_template.get_template_source_name()}"
+        ) from ex
 
     if config_project_template.dest_folder is None:
         config_project_template.dest_folder = config_template.default_dest_folder or ""
@@ -94,22 +89,19 @@ async def _collect_prompt_document_template(
             config_project_template.get_template_source_name(),
             ex,
         )
+        raise RuntimeError(
+            f"Unable to enumerate prompt metadata for {config_project_template.get_template_source_name()}"
+        ) from ex
+
+    sibling_declarations = []
+
+    if config_template.require_sibling_templates is None:
         prompt_document_builder.add_template(
             prompt_template_reference(config_project_template),
             prompt_dest_folder(config_project_template),
+            parameters,
             None,
-            prompt_condition(config_project_template),
         )
-        return
-
-    prompt_document_builder.add_template(
-        prompt_template_reference(config_project_template),
-        prompt_dest_folder(config_project_template),
-        parameters,
-        prompt_condition(config_project_template),
-    )
-
-    if config_template.require_sibling_templates is None:
         return
 
     for sibling_template in config_template.require_sibling_templates:
@@ -125,14 +117,9 @@ async def _collect_prompt_document_template(
                 source,
             )
         except Exception as ex:
-            logging.debug("Unable to resolve sibling declaration for prompt export: %s", ex)
-            prompt_document_builder.add_template(
-                raw_template_reference,
-                raw_dest_folder,
-                None,
-                raw_condition,
-            )
-            continue
+            raise RuntimeError(
+                f"Unable to resolve sibling declaration for prompt export: {raw_template_reference}"
+            ) from ex
 
         matching_template = find_matching_template(config_project, rendered_sibling_template)
         if matching_template is not None:
@@ -145,16 +132,36 @@ async def _collect_prompt_document_template(
         else:
             next_template = rendered_sibling_template
 
-        await _collect_prompt_document_template(
-            settings,
-            runtime_settings,
-            next_template,
-            project_folder,
-            config_project,
-            prompt_document_builder,
-            source_cache,
-            visited_template_keys,
+        sibling_declarations.append(
+            PromptSiblingTemplateInfo(
+                raw_template_reference,
+                prompt_dest_folder(next_template),
+                raw_condition,
+            )
         )
+
+        try:
+            await _collect_prompt_document_template(
+                settings,
+                runtime_settings,
+                next_template,
+                project_folder,
+                config_project,
+                prompt_document_builder,
+                source_cache,
+                visited_template_keys,
+            )
+        except RuntimeError as ex:
+            raise RuntimeError(
+                f"Unable to resolve sibling declaration for prompt export: {raw_template_reference}"
+            ) from ex
+
+    prompt_document_builder.add_template(
+        prompt_template_reference(config_project_template),
+        prompt_dest_folder(config_project_template),
+        parameters,
+        sibling_declarations,
+    )
 
 
 async def collect_prompt_document_single(
