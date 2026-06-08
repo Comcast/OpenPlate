@@ -110,6 +110,32 @@ parameters:
 
 In order for a user to specify it, they need to pass "--ask-hidden" to their command and possiblly "--ask-again" 
 
+### "Conditionally Hidden"
+
+When a parameter should become hidden or visible based on project liquid logic, the `conditionally_hidden` attribute may be specified:
+
+```yaml
+parameters:
+    - name: "deployment_type"
+      description: "Type of Deployment to use"
+      default: "lambda"
+
+    - name: "instance_type"
+      description: "EC2 instance type"
+      default: "t3.small"
+      conditionally_hidden: "{{% if deployment_type == 'ec2' %}}true{{% else %}}false{{% endif %}}"
+```
+
+- This property uses the project's liquid syntax, just like conditional sibling templates.
+- It can use the same built-in values as `default`, plus parameter answers from earlier parameters in the file.
+- Parameters are processed in order, so only parameters listed earlier in the file are guaranteed to be available.
+- The rendered value must be `true` or `false`.
+- If the rendered value is `false`, the parameter is treated as hidden.
+- If the rendered value is `true`, the parameter remains visible.
+- You cannot specify `hidden` and `conditionally_hidden` on the same parameter.
+- If `conditionally_hidden` is specified, `default` is required and may be blank.
+- `--ask-hidden` still allows the user to answer a conditionally hidden parameter because this feature changes hiddenness, not the existence of the parameter.
+
 ### Choices (v1.0.94)
 
 Some parameters may have a set of choices, in this case, the user will be prompted to select one of the choices:

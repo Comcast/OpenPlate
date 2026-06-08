@@ -30,8 +30,9 @@ class TemplateConfigParameter:
         name: str,
         description: str,
         default: str,
-        hidden: bool,
-        choices: Optional[list[str]]
+        hidden: Optional[bool],
+        choices: Optional[list[str]],
+        conditionally_hidden: Optional[str] = None
     ):
         if name is None:
             raise ValueError("name cannot be None")
@@ -42,14 +43,21 @@ class TemplateConfigParameter:
         self.default = default
         self.hidden = hidden
         self.choices = choices
+        self.conditionally_hidden = conditionally_hidden
 
         if default is not None and choices is not None:
             if default not in choices:
                 message_string = ", ".join(choices)
                 raise ValueError(f"Default value '{default}' for parameter '{name}' is not in the choices: [{message_string}]")
 
+        if self.hidden is not None and self.conditionally_hidden is not None:
+            raise ValueError("A parameter cannot specify both hidden and conditionally_hidden")
+
         if self.hidden and self.default is None:
             raise ValueError("If a parameter is hidden, it must have a default")
+
+        if self.conditionally_hidden is not None and self.default is None:
+            raise ValueError("If a parameter uses conditionally_hidden, it must have a default")
 
 
 class RequireSiblingTemplate:
@@ -265,7 +273,8 @@ def deserialize_parameter(data):
         data.get("description") or data.get("prompt"), # also take prompt for backwards compatibility
         default,
         data.get("hidden"),
-        deserialize_string_list(data.get("choices"), "choices") if data.get("choices") else None
+        deserialize_string_list(data.get("choices"), "choices") if data.get("choices") else None,
+        data.get("conditionally_hidden")
     )
 
 
