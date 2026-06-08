@@ -30,6 +30,48 @@ from openplate.cfg.template_config import TemplateConfigParameter
 from openplate.git import get_git_url, get_git_email
 
 
+def resolve_parameter_hidden_state(
+    config_template: template_config.TemplateConfig,
+    config_project: project_config.ProjectConfig,
+    config_project_template: project_config.ProjectTemplateConfig,
+    project_base_folder: str,
+    template_base_folder: str,
+    parameter: TemplateConfigParameter,
+    runtime_settings: OpenPlateRuntimeSettings,
+) -> bool:
+    effective_hidden = bool(parameter.hidden)
+
+    if parameter.conditionally_hidden is None:
+        return effective_hidden
+
+    template_options = compile_template_options(
+        config_template,
+        config_project,
+        config_project_template,
+        project_base_folder,
+        template_base_folder,
+        runtime_settings.ignore_tool_version
+    )
+    rendered_hidden_state = template_processor.process(
+        template_options,
+        str(parameter.conditionally_hidden),
+        [],
+        "Parameter conditionally_hidden: " + str(parameter.conditionally_hidden),
+        config_template.override_tag_start,
+        config_template.override_tag_end,
+        config_template.override_statement_start,
+        config_template.override_statement_end
+    )
+    normalized_hidden_state = str(rendered_hidden_state).strip().lower()
+
+    if normalized_hidden_state not in {"true", "false"}:
+        raise ValueError(
+            f"Parameter '{parameter.name}' conditionally_hidden must render to 'true' or 'false', got '{rendered_hidden_state}'"
+        )
+
+    return normalized_hidden_state == "false"
+
+
 def resolve_parameter(
     settings: OpenPlateSettings,
     runtime_settings: OpenPlateRuntimeSettings,
@@ -89,8 +131,18 @@ def resolve_parameter(
 
 
 
+    effective_hidden = resolve_parameter_hidden_state(
+        config_template,
+        config_project,
+        config_project_template,
+        project_base_folder,
+        template_base_folder,
+        parameter,
+        runtime_settings
+    )
+
     # Auto answer case, hidden:
-    if parameter.hidden and not runtime_settings.ask_hidden:
+    if effective_hidden and not runtime_settings.ask_hidden:
         logging.debug(f"not prompting for hidden parameter[{parameter.name}]")
         return False, default_value
 
