@@ -131,3 +131,7 @@ dmypy.json
 .idea
 
 trial-runs
+manual-tests/work/*
+!manual-tests/work/.gitkeep
+manual-tests/artifacts/*
+!manual-tests/artifacts/.gitkeep

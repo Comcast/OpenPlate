@@ -258,6 +258,171 @@ def test_project_config_does_not_persist_raw_prompt_identity_fields(tmp_path):
     assert "raw_condition" not in template_data
 
 
+def test_init_overwrite_reuses_existing_template_and_skips_init_commands(tmp_path, monkeypatch):
+        repo_path = tmp_path / "template"
+        repo_path.mkdir(parents=True, exist_ok=True)
+        (repo_path / "openplate.template.yaml").write_text(
+                "\n".join([
+                        "ignore_paths:",
+                        "  - '^openplate\\\\.template\\\\.yaml$'",
+                        "replacement_paths:",
+                        "  - 'scaffold/.*'",
+                        "readonly_paths:",
+                        "  - 'scaffold/app/managed/.*'",
+                        "parameters:",
+                        "  - name: service_name",
+                        "    description: Service name",
+                        "    default: starter-service",
+                        "init_commands:",
+                        "  - command: >-",
+                        "      python -c \"from pathlib import Path; Path('hooks').mkdir(exist_ok=True); Path('hooks/init-command.txt').write_text('init command ran\\n', encoding='utf-8')\"",
+                        "",
+                ]),
+                encoding="utf-8",
+        )
+        (repo_path / "README.md").write_text("template\n", encoding="utf-8")
+        (repo_path / "scaffold" / "app" / "managed").mkdir(parents=True, exist_ok=True)
+        (repo_path / "scaffold" / "app" / "managed" / "service.txt").write_text("service={{ service_name }}\n", encoding="utf-8")
+        (repo_path / "scaffold" / "app" / "docs").mkdir(parents=True, exist_ok=True)
+        (repo_path / "scaffold" / "app" / "docs" / "overview.md").write_text("service={{ service_name }}\n", encoding="utf-8")
+        _create_git_repo(repo_path)
+        source_url = f"{repo_path.as_uri()}#main"
+
+        project_path = tmp_path / "project"
+        project_path.mkdir()
+
+        first_args = [
+                "openplate",
+                "-c",
+                str(tmp_path / "missing-config.yaml"),
+                "project",
+                "--project-folder",
+                str(project_path),
+                "init",
+                source_url,
+                "--dest-folder",
+                "app",
+                "--allow-template-commands",
+        ]
+
+        initial_answers = iter(["", ""])
+        monkeypatch.setattr("builtins.input", lambda _prompt: next(initial_answers))
+
+        asyncio.run(async_main(first_args))
+
+        managed_path = project_path / "scaffold" / "app" / "managed" / "service.txt"
+        docs_path = project_path / "scaffold" / "app" / "docs" / "overview.md"
+        hook_path = project_path / "hooks" / "init-command.txt"
+        managed_path.chmod(0o666)
+        docs_path.write_text("drifted\n", encoding="utf-8")
+        hook_path.unlink()
+
+        second_args = [
+                "openplate",
+                "-c",
+                str(tmp_path / "missing-config.yaml"),
+                "project",
+                "--project-folder",
+                str(project_path),
+                "init",
+                source_url,
+                "--dest-folder",
+                "app",
+                "--overwrite",
+        ]
+
+        monkeypatch.setattr("builtins.input", lambda _prompt: pytest.fail("init --overwrite unexpectedly prompted"))
+
+        asyncio.run(async_main(second_args))
+
+        config = yaml.safe_load((project_path / project_config_file_name).read_text(encoding="utf-8"))
+
+        assert managed_path.read_text(encoding="utf-8") == "service=starter-service\n"
+        assert docs_path.read_text(encoding="utf-8") == "service=starter-service\n"
+        assert not hook_path.exists()
+        assert len(config["templates"]) == 1
+
+
+def test_init_rejects_rerun_without_overwrite_for_existing_tracked_template(tmp_path, monkeypatch):
+        repo_path = tmp_path / "template"
+        repo_path.mkdir(parents=True, exist_ok=True)
+        (repo_path / "openplate.template.yaml").write_text(
+            "\n".join([
+                "ignore_paths:",
+                "  - '^openplate\\\\.template\\\\.yaml$'",
+                "replacement_paths:",
+                "  - 'scaffold/.*'",
+                "parameters:",
+                "  - name: service_name",
+                "    description: Service name",
+                "    default: starter-service",
+                "init_commands:",
+                "  - command: >-",
+                "      python -c \"from pathlib import Path; Path('hooks').mkdir(exist_ok=True); Path('hooks/init-command.txt').write_text('init command ran\\n', encoding='utf-8')\"",
+                "",
+            ]),
+            encoding="utf-8",
+        )
+        (repo_path / "README.md").write_text("template\n", encoding="utf-8")
+        (repo_path / "scaffold" / "app" / "managed").mkdir(parents=True, exist_ok=True)
+        (repo_path / "scaffold" / "app" / "managed" / "service.txt").write_text("service={{ service_name }}\n", encoding="utf-8")
+        (repo_path / "scaffold" / "app" / "docs").mkdir(parents=True, exist_ok=True)
+        (repo_path / "scaffold" / "app" / "docs" / "overview.md").write_text("service={{ service_name }}\n", encoding="utf-8")
+        _create_git_repo(repo_path)
+        source_url = f"{repo_path.as_uri()}#main"
+
+        project_path = tmp_path / "project"
+        project_path.mkdir()
+
+        first_args = [
+            "openplate",
+            "-c",
+            str(tmp_path / "missing-config.yaml"),
+            "project",
+            "--project-folder",
+            str(project_path),
+            "init",
+            source_url,
+            "--dest-folder",
+            "app",
+            "--allow-template-commands",
+        ]
+
+        initial_answers = iter(["", ""])
+        monkeypatch.setattr("builtins.input", lambda _prompt: next(initial_answers))
+
+        asyncio.run(async_main(first_args))
+
+        managed_path = project_path / "scaffold" / "app" / "managed" / "service.txt"
+        docs_path = project_path / "scaffold" / "app" / "docs" / "overview.md"
+        managed_path.unlink()
+        docs_path.unlink()
+
+        second_args = [
+            "openplate",
+            "-c",
+            str(tmp_path / "missing-config.yaml"),
+            "project",
+            "--project-folder",
+            str(project_path),
+            "init",
+            source_url,
+            "--dest-folder",
+            "app",
+        ]
+
+        monkeypatch.setattr("builtins.input", lambda _prompt: pytest.fail("rerun without overwrite unexpectedly prompted"))
+
+        with pytest.raises(SystemExit, match="Template already exists at destination folder"):
+            asyncio.run(async_main(second_args))
+
+        config = yaml.safe_load((project_path / project_config_file_name).read_text(encoding="utf-8"))
+
+        assert not managed_path.exists()
+        assert not docs_path.exists()
+        assert len(config["templates"]) == 1
+
+
 def test_template_config_accepts_legacy_conditional_file_field():
     config = template_config.deserialize_project_config(
         {

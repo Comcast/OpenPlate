@@ -274,7 +274,17 @@ async def async_main(args):
         else:
             no_cache = not result.cache
 
-        template = ProjectTemplateConfig(source_reference, None, None, result.dest_folder, None, {}, ignore_paths, no_cache)
+        template = ProjectTemplateConfig(
+            source_reference,
+            None,
+            None,
+            result.dest_folder,
+            None,
+            {},
+            ignore_paths,
+            no_cache,
+            raw_dest_folder=None,
+        )
 
         options = InitOptions(
             template,

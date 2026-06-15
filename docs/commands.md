@@ -67,6 +67,12 @@ Some templates take advantage of a "sub-folder" to init into.  This allows the t
   openplate init --dest-folder=src git@github.com:my-org/ot-docker.git#v1
   ```
 
+### Re-running Init
+
+- A plain rerun of `openplate init` for the same tracked template and dest-folder is rejected.
+- `openplate init --overwrite` reruns init for the same tracked template and dest-folder and overwrites tracked template output.
+- `openplate init --overwrite` skips init-command reruns and reuses the existing tracked template entry in `.openplate.project.yaml`.
+
 ## Command: update
 
 Update the current project with the latest versions of the template
@@ -76,6 +82,16 @@ openplate update
 ```
 
 The legacy nested `project` variant still works for compatibility, but `openplate update` is the documented command.
+
+Common update modes:
+
+```
+openplate update --update-missing
+openplate update --update-full
+```
+
+- `--update-missing` recreates missing non-readonly files without overwriting existing non-readonly files.
+- `--update-full` is the overwrite-oriented maintenance mode. It recreates missing non-readonly files and overwrites existing non-readonly files.
 
 ## Prompt JSON Workflow
 

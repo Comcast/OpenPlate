@@ -84,7 +84,30 @@ async def run(
         os.path.join(options.destination, project_config.project_config_file_name)
     )
 
-    config_project.templates.append(options.add_template)
+    tracked_template = next(
+        (
+            template for template in config_project.templates
+            if template.dest_folder == options.add_template.dest_folder
+            and template.src_url == options.add_template.src_url
+            and template.src_name == options.add_template.src_name
+            and template.src_folder == options.add_template.src_folder
+        ),
+        None,
+    )
+    if tracked_template is None:
+        tracked_template = options.add_template
+        config_project.templates.append(tracked_template)
+    else:
+        if not options.overwrite_existing_files:
+            tracked_dest_folder = tracked_template.dest_folder or "."
+            raise SystemExit(
+                "Template already exists at destination folder "
+                f"'{tracked_dest_folder}'. Use 'openplate update' for maintenance or "
+                "rerun with 'openplate init --overwrite'."
+            )
+        tracked_template.version = options.add_template.version
+        tracked_template.template_ignore_paths = options.add_template.template_ignore_paths
+        tracked_template.no_cache = options.add_template.no_cache
 
     allow_template_commands = settings.allow_template_commands or options.allow_template_commands
 
@@ -95,7 +118,7 @@ async def run(
     await source_template_recursive_walk_single(
         settings,
         runtime_settings,
-        options.add_template,
+        tracked_template,
         options.destination,
         VerifyWalkOptions(
             True,
