@@ -1,4 +1,9 @@
-## ADDED Requirements
+# project-prompts-json Specification
+
+## Purpose
+TBD - normalized from a previously archived delta-only spec document.
+
+## Requirements
 
 ### Requirement: OpenPlate normalizes destination-folder values consistently for init prompt JSON
 OpenPlate SHALL normalize each template or CLI `dest_folder` input before using it for init template resolution, parameter resolution, prompt node identity, prompt export metadata, or prompt-related matching and logging.
@@ -64,8 +69,6 @@ OpenPlate SHALL NOT expose `--print-prompts-json` on `project init`; init prompt
 #### Scenario: Init no longer accepts print-prompts-json
 - **WHEN** a user runs `openplate project init <source> --print-prompts-json`
 - **THEN** OpenPlate rejects the command because `--print-prompts-json` is not a valid `project init` argument
-
-## MODIFIED Requirements
 
 ### Requirement: OpenPlate prints prompt state as template-grouped JSON
 This requirement title is retained to modify the existing capability in place, but the printed document defined by this change is node-based: each exported entry is a prompt node identified by `node-id`, not a template-keyed wrapper structure.
