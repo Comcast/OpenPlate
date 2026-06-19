@@ -108,7 +108,7 @@ Rules:
 
 - `project_src_url` remains the runtime compatibility alias for `project_git_repo_url`.
 - `project_repo_org` and `project_repo_name` remain available as deprecated aliases for the new Git-scoped names.
-- `project_folder_name` is only populated when `project_git_mode` is false; it is blank in Git mode.
+- `project_folder_name` always remains available as a folder-like project identifier. Outside Git mode it is the resolved project root folder name. In Git mode it uses the parsed Git repository name when available and otherwise falls back to the Git root folder name.
 - Project Git URL parsing must work for common HTTPS and SSH Git remote URL forms.
 - Template Git URL parsing must work for common HTTPS and SSH Git URL forms.
 - If an HTTPS Git URL contains embedded userinfo, OpenPlate strips the username and password before exposing any runtime URL variable derived from it.

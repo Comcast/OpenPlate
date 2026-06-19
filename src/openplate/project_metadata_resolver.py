@@ -112,16 +112,13 @@ def resolve_project_metadata(
     project_base_folder: str,
 ) -> bool:
     any_changed = False
+    root_folder_name = os.path.basename(os.path.abspath(os.path.normpath(project_base_folder)))
 
     project_git_mode = get_git_root(project_base_folder) is not None
     if _set_runtime_value(config_project, "project_git_mode", project_git_mode):
         any_changed = True
 
-    project_folder_name = ""
-    if not project_git_mode:
-        project_folder_name = os.path.basename(os.path.abspath(os.path.normpath(project_base_folder)))
-    if _set_runtime_value(config_project, "project_folder_name", project_folder_name):
-        any_changed = True
+    project_folder_name = root_folder_name
 
     try:
         project_src_url = (get_git_url(project_base_folder) or "").strip()
@@ -151,8 +148,14 @@ def resolve_project_metadata(
         if _set_runtime_value(config_project, "project_repo_name", project_repo_name):
             any_changed = True
 
+        if project_git_mode and project_repo_name:
+            project_folder_name = project_repo_name
+
     except Exception:
         pass
+
+    if _set_runtime_value(config_project, "project_folder_name", project_folder_name):
+        any_changed = True
 
     # Do not update the user email when doing automated processing:
     if not runtime_settings.is_automation:

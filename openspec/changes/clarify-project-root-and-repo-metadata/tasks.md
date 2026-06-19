@@ -13,7 +13,7 @@
 ## 3. Liquid Variables And Git Metadata
 
 - [x] 3.1 Extend template option compilation to expose `project_git_mode`, the runtime-only project metadata fields, `project_git_repo_url`, `project_git_ssh_repo_url`, `project_git_https_repo_url`, deprecated compatibility aliases such as `project_repo_org` and `project_repo_name`, and the corresponding template-side source and repo URL families.
-- [x] 3.2 Populate project Git variables from the resolved project root folder, supporting both SSH and HTTPS remote URLs, leaving project remote variables empty when no remote exists, sanitizing HTTPS credentials, and making `project_folder_name` available only outside Git mode.
+- [x] 3.2 Populate project Git variables from the resolved project root folder, supporting both SSH and HTTPS remote URLs, leaving project remote variables empty when no remote exists, sanitizing HTTPS credentials, and making `project_folder_name` resolve to the Git repository name in Git mode with a root-folder fallback.
 - [x] 3.3 Populate template Git variables from parsed URL source references and checked-out template repos, including normalized template paths, deterministic ref selection, SSH and HTTPS Git URL parsing, source-URL suffix preservation, sanitized credentials, alternate SSH and HTTPS source and repo forms, and empty Git metadata for non-Git template sources.
 
 ## 4. Validation And Documentation

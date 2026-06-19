@@ -19,7 +19,7 @@ def _normalize_abs_path(path: str) -> str:
     if path is None:
         raise TypeError
 
-    return os.path.abspath(os.path.normpath(path))
+    return os.path.realpath(os.path.abspath(os.path.normpath(path)))
 
 
 def _normalize_dest_folder(dest_folder: Optional[str]) -> Optional[str]:

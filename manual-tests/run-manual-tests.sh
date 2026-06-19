@@ -379,7 +379,7 @@ run_case1() {
   assert_file_contains "$managed_a" 'instance=t3.small'
   assert_file_contains "$managed_a" 'hidden=hidden-default'
   assert_file_contains "$managed_a" 'project_git_mode=true'
-  assert_file_contains "$managed_a" 'project_folder_name='
+  assert_file_contains "$managed_a" 'project_folder_name=bootstrap-project'
   assert_file_contains "$managed_a" 'project_src_url='
   assert_file_contains "$managed_a" 'project_git_repo_url='
   assert_file_contains "$managed_a" 'project_git_ssh_repo_url='
@@ -460,7 +460,7 @@ PY
   local nested_hook_git="$git_invocation/hooks/init-command.txt"
   local project_config_git="$git_project_root/.openplate.project.yaml"
   assert_file_contains "$managed_git" 'project_git_mode=true'
-  assert_file_contains "$managed_git" 'project_folder_name='
+  assert_file_contains "$managed_git" 'project_folder_name=manual-service'
   assert_file_contains "$managed_git" 'project_src_url=https://github.com/manual-org/manual-service.git'
   assert_file_contains "$managed_git" 'project_git_repo_url=https://github.com/manual-org/manual-service.git'
   assert_file_contains "$managed_git" 'project_git_ssh_repo_url=git@github.com:manual-org/manual-service.git'

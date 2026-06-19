@@ -15,7 +15,7 @@ This document is the reference for OpenPlate's built-in template variables.
 | --- | --- | --- |
 | `dest_folder` | Resolved destination path for the current template instance beneath the project root | Explicit `--dest-folder` wins; otherwise it is derived from `--project-root`, Git invocation context, or `.`. |
 | `project_git_mode` | Whether the resolved project root is inside a Git work tree | `true` inside Git, `false` otherwise. |
-| `project_folder_name` | Folder name of the resolved project root when the project is not in Git mode | Empty when `project_git_mode` is `true`. |
+| `project_folder_name` | Folder-like project name for the resolved project root | Outside Git mode this is the resolved root folder name. In Git mode it is the parsed Git repository name when available, otherwise the resolved Git root folder name. |
 
 Example:
 

@@ -110,7 +110,7 @@ def test_compile_template_options_exposes_project_git_metadata_and_aliases(tmp_p
     )
 
     assert options["project_git_mode"] is True
-    assert options["project_folder_name"] == ""
+    assert options["project_folder_name"] == "my-repo"
     assert options["project_src_url"] == "https://github.com/my-org/my-repo.git"
     assert options["project_git_repo_url"] == "https://github.com/my-org/my-repo.git"
     assert options["project_git_https_repo_url"] == "https://github.com/my-org/my-repo.git"
@@ -119,6 +119,58 @@ def test_compile_template_options_exposes_project_git_metadata_and_aliases(tmp_p
     assert options["project_git_repo_name"] == "my-repo"
     assert options["project_repo_org"] == "my-org"
     assert options["project_repo_name"] == "my-repo"
+
+
+def test_compile_template_options_falls_back_to_git_root_folder_name_without_remote(tmp_path):
+    project_root = tmp_path / "project"
+    _create_git_repo(project_root)
+
+    config_project_template = ProjectTemplateConfig(
+        "https://example.com/template.git#main",
+        None,
+        None,
+        ".",
+        None,
+        {},
+        [],
+        False,
+    )
+    config_project = ProjectConfig(
+        [config_project_template],
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        {},
+        {},
+        None,
+    )
+
+    resolve_project_metadata(
+        OpenPlateRuntimeSettings(False, False, True, True),
+        config_project,
+        str(project_root),
+    )
+
+    options = compile_template_options(
+        _empty_template_config(),
+        config_project,
+        config_project_template,
+        str(tmp_path),
+        str(project_root),
+        True,
+    )
+
+    assert options["project_git_mode"] is True
+    assert options["project_folder_name"] == "project"
+    assert options["project_src_url"] == ""
+    assert options["project_git_repo_name"] == ""
 
 
 def test_compile_template_options_exposes_template_git_url_variants(tmp_path):

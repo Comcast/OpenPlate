@@ -23,7 +23,7 @@ At the same time, the project file stores snapshots of project metadata that the
 - Preserve template `?path=` and `#ref` semantics when exposing or converting full template source URLs.
 - Leave `template_git_*` values empty when the template source is not a Git URL.
 - Keep `project_src_url` as a runtime compatibility alias to the sanitized project Git repo URL, but stop persisting it in the project file.
-- Populate `project_folder_name` only when not in Git mode, and stop persisting it in the project file.
+- Populate `project_folder_name` from the resolved project root at runtime, using the Git repository name in Git mode when available, and stop persisting it in the project file.
 - Add `docs/template-parameters.md` as the detailed template-parameter reference, and replace the inline built-in-parameters section in `docs/templates.md` with a meaningful link to that reference.
 - **BREAKING** Rename the shared root-selection CLI option from `--project-folder` to `--project-root`.
 - **BREAKING** Remove runtime support for populated `src_name`, `src_folder`, `template_src_folder`, `vcs_url`, and `template_prefix`; blank legacy values are ignored, populated legacy source values fail loudly, and legacy settings are ignored.

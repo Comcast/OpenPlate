@@ -116,7 +116,7 @@ OpenPlate SHALL expose these project-scoped Liquid variables:
 - `project_repo_org`
 - `project_repo_name`
 
-`project_folder_name` SHALL be populated only when `project_git_mode` is `false`. When `project_git_mode` is `true`, `project_folder_name` SHALL be empty.
+`project_folder_name` SHALL always be populated from the resolved project root at runtime. When `project_git_mode` is `false`, `project_folder_name` SHALL equal the resolved project root folder name. When `project_git_mode` is `true`, `project_folder_name` SHALL equal the parsed Git repository name when one is available and SHALL otherwise fall back to the resolved Git root folder name.
 
 `project_src_url` SHALL remain the runtime compatibility alias for the sanitized original project Git repo URL.
 
