@@ -54,7 +54,9 @@ ex:
     This is the project namespace: {{ project_namespace }}
 ```
 
-  Built-in template variables, Git URL variants, runtime-only metadata rules, and deprecated compatibility aliases are documented in [docs/template-parameters.md](template-parameters.md).
+### Built-in Template Variables
+
+Built-in template variables, Git URL variants, runtime-only metadata rules, and deprecated compatibility aliases are documented in [docs/template-parameters.md](template-parameters.md).
 
 ### Default
 
