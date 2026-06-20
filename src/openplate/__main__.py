@@ -115,6 +115,7 @@ def configure_project_update_parser(parser):
         help="One-time override to allow a requiring template to use last_updater_email during this run.",
         action="store_true"
     )
+    add_prompt_document_input_arguments(parser)
 
 
 def configure_project_verify_parser(parser):
@@ -185,6 +186,7 @@ def create_arg_parser(args):
     parser_print_init_json = project_subparsers.add_parser("print-init-json")
     parser_print_init_json.set_defaults(command="project-print-init-json")
     parser_print_init_json.add_argument("source", help="Template source URL")
+    parser_print_init_json.add_argument("--dest-folder", required=False, help="sub-folder to init into for prompt export.")
     parser_print_init_json.add_argument(
         "--allow-default-branch",
         required=False,
@@ -199,6 +201,8 @@ def create_arg_parser(args):
         help="Include descriptive node metadata in the printed JSON output.",
         action="store_true"
     )
+    parser_print_update_json = project_subparsers.add_parser("print-update-json")
+    parser_print_update_json.set_defaults(command="project-print-update-json")
 
     legacy_parser_init = project_subparsers.add_parser("init")
     configure_project_init_parser(legacy_parser_init)
@@ -274,7 +278,7 @@ async def async_main(args):
         project_context = resolve_project_runtime_context(
             os.getcwd(),
             getattr(result, "project_root", None),
-            getattr(result, "dest_folder", None) if result.command == "project-init" else None,
+            getattr(result, "dest_folder", None) if result.command in {"project-init", "project-print-init-json"} else None,
         )
     else:
         runtime_settings = OpenPlateRuntimeSettings(False, False, False, result.automation, False)
@@ -330,7 +334,7 @@ async def async_main(args):
             {},
             ignore_paths,
             no_cache,
-            raw_dest_folder=None,
+            raw_dest_folder=project_context.dest_folder,
         )
 
         options = InitOptions(
@@ -351,14 +355,24 @@ async def async_main(args):
             project_context.project_root_folder,
             result.verbose,
         )
+    elif result.command == "project-print-update-json":
+        await project_update.print_prompt_document(
+            configuration,
+            runtime_settings,
+            project_context.project_root_folder,
+        )
     elif result.command == "project-verify":
         options = VerifyOptions(project_context.project_root_folder)
         await project_verify.run(configuration, runtime_settings, options)
     elif result.command == "project-update":
+        prompt_document = load_prompt_document(result)
+        if prompt_document is not None:
+            runtime_settings.ask_hidden = True
         options = UpdateOptions(
             project_context.project_root_folder,
             result.update_missing,
             result.update_full,
+            prompt_document=prompt_document,
         )
         await project_update.run(configuration, runtime_settings, options)
     else:
