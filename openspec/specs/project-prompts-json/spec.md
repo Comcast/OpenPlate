@@ -71,7 +71,7 @@ OpenPlate SHALL NOT expose `--print-prompts-json` on `project init`; init prompt
 - **THEN** OpenPlate rejects the command because `--print-prompts-json` is not a valid `project init` argument
 
 ### Requirement: OpenPlate prints prompt state as template-grouped JSON
-This requirement title is retained to modify the existing capability in place, but the printed document defined by this change is node-based: each exported entry is a prompt node identified by `node-id`, not a template-keyed wrapper structure.
+OpenPlate SHALL retain this requirement title to modify the existing capability in place, even though the printed document defined by this change is node-based: each exported entry is a prompt node identified by `node-id`, not a template-keyed wrapper structure.
 
 OpenPlate SHALL support `openplate project print-init-json <source>` as a read-only planning/export command that prints a JSON array of init prompt nodes instead of interactive prompt text.
 
