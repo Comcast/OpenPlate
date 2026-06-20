@@ -16,7 +16,13 @@ Set configuration for the tool (available in ~/.openplate)
 openplate config set --parameter-default service_name=my-service
 ```
 
-`config set` now supports persistent parameter defaults and the `--allow-template-commands` safety setting. Legacy source-resolution settings such as `--vcs-url` and `--template-prefix` are no longer supported runtime configuration.
+`config set` now supports persistent parameter defaults, the `--allow-template-commands` safety setting, and `--allow-last-updater-email` for templates that explicitly require `last_updater_email`. Legacy source-resolution settings such as `--vcs-url` and `--template-prefix` are no longer supported runtime configuration.
+
+To persist consent for requiring templates:
+
+```
+openplate config set --allow-last-updater-email
+```
 
 ### Default Parameters
 
@@ -48,9 +54,24 @@ openplate init file:///C:/repos/template-catalog#main
 
 The legacy nested `project` variant still works for compatibility, but `openplate init` is the documented command.
 
+If a template requires `last_updater_email`, allow it once for the current init run with:
+
+```
+openplate init --allow-last-updater-email https://github.com/my-org/ot-template.git#v1
+```
+
+If you need a non-default SSH key for an SSH template URL, export `GIT_SSH_COMMAND` before running OpenPlate so Git uses the expected identity:
+
+```
+export GIT_SSH_COMMAND='ssh -i ~/.ssh/special-openplate-key -o IdentitiesOnly=yes'
+openplate init git@github.com:my-org/template-catalog.git?path=python/api#main
+```
+
+This applies only to SSH template URLs. HTTPS template URLs do not use SSH keys.
+
 ### Project Root Resolution
 
-`init`, `update`, `project verify`, and `project print-init-json` share the `--project-root` option.
+`init`, `update`, `verify`, and `project print-init-json` share the `--project-root` option.
 
 - `--project-root <path>` sets the managed project root explicitly.
 - if `--project-root` is omitted and the invocation folder is inside a Git work tree, OpenPlate uses the Git top-level folder as the project root and the invocation-relative path as the default `dest_folder`
@@ -62,7 +83,7 @@ Examples:
 ```
 openplate init --project-root C:/workspaces/my-repo https://github.com/my-org/ot-template.git#v1
 openplate update --project-root C:/workspaces/my-repo --update-full
-openplate project verify --project-root C:/workspaces/my-repo
+openplate verify --project-root C:/workspaces/my-repo
 ```
 
 Examples:
@@ -107,6 +128,12 @@ openplate update
 ```
 
 The legacy nested `project` variant still works for compatibility, but `openplate update` is the documented command.
+
+If a tracked template requires `last_updater_email`, allow it once for the current run with:
+
+```
+openplate update --allow-last-updater-email
+```
 
 Common update modes:
 
@@ -211,13 +238,15 @@ Notes:
 - imported nodes that are not processed by the run are ignored and logged by `node-id`.
 - OpenPlate warns when supplied prompt answers are left unused for a matched node.
 
-## Command: project verify
+## Command: verify
 
 Verify that the project has not drifted from the template. Exit with code -1 if so.
 
 ```
-openplate project verify
+openplate verify
 ```
+
+The legacy `openplate project verify` form still works for compatibility, but `openplate verify` is the documented command.
 
 ## Ask Again
 
