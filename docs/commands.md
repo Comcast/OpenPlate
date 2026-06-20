@@ -169,25 +169,33 @@ The legacy nested `project` variant still works for compatibility, but `openplat
 
 ## Prompt JSON Workflow
 
-For machine-driven init runs, OpenPlate can export the prompt state as JSON, let you fill in only the answers you care about, and then consume that JSON during `init` without falling back to interactive prompting.
+OpenPlate supports a machine-driven prompt workflow for both init and update. The general pattern is:
+
+1. Print the prompt document for the exact command context you plan to run.
+2. Edit only the answers you want to change.
+3. Re-run the matching command with `--prompts-json-file` or `--prompts-json-stdin`.
+
+### Init Prompt JSON
+
+For init, the prompt document is bound to the same `--dest-folder` placement context that the later init run must use.
 
 Export the init prompt tree:
 
 ```
-openplate project print-init-json https://github.com/my-org/ot-template.git#v1
-openplate project print-init-json https://github.com/my-org/ot-template.git#v1 --verbose
+openplate project print-init-json https://github.com/my-org/ot-template.git#v1 --dest-folder generated/app
+openplate project print-init-json https://github.com/my-org/ot-template.git#v1 --dest-folder generated/app --verbose
 ```
 
-Import answers from a file or standard input:
+Import answers from a file or standard input using the same `--dest-folder`:
 
 ```
-openplate init https://github.com/my-org/ot-template.git#v1 --prompts-json-file prompts.json
-type prompts.json | openplate init https://github.com/my-org/ot-template.git#v1 --prompts-json-stdin
+openplate init https://github.com/my-org/ot-template.git#v1 --dest-folder generated/app --prompts-json-file prompts.json
+type prompts.json | openplate init https://github.com/my-org/ot-template.git#v1 --dest-folder generated/app --prompts-json-stdin
 ```
 
 `project print-init-json` is read-only. It does not update `.openplate.project.yaml` or write template output.
 
-The compact export format is a top-level JSON array of prompt nodes:
+The compact init export format is a top-level JSON array of prompt nodes:
 
 ```json
 [
@@ -200,7 +208,7 @@ The compact export format is a top-level JSON array of prompt nodes:
 ]
 ```
 
-The verbose export includes the same `node-id` and `answers` fields plus `info` metadata:
+The verbose init export includes the same `node-id` and `answers` fields plus `info` metadata:
 
 ```json
 [
@@ -211,7 +219,7 @@ The verbose export includes the same `node-id` and `answers` fields plus `info` 
     },
     "info": {
       "template": "https://github.com/my-org/ot-template.git#v1",
-      "dest_folder": ".",
+      "dest_folder": "generated/app",
       "parameters": {
         "service_name": {
           "default": null,
@@ -227,38 +235,96 @@ The verbose export includes the same `node-id` and `answers` fields plus `info` 
 ]
 ```
 
-Key semantics:
+Init semantics:
 
-- `node-id` is the import/export identity for a reached init node.
+- `node-id` is the import/export identity for a reached init node under the chosen `--dest-folder`.
 - `answers` contains only the prompt answers used on import.
 - compact export omits `info`.
-- verbose export includes `info.template`, init-relative `info.dest_folder`, and prompt metadata.
+- verbose export includes `info.template`, project-relative `info.dest_folder`, and prompt metadata.
 - when present, verbose `info.require_sibling_templates` describes caller-side sibling declarations, including any sibling `condition` metadata.
-- the init root from `openplate init --dest-folder ...` is not part of exported `node-id` values or exported `info.dest_folder` values.
+- hidden parameters are included only when the command uses `--ask-hidden`.
+- `null` means do not answer this parameter from JSON; normal runtime fallback still applies.
+- `""` means an intentional blank string answer.
+- any other non-null string means an explicit supplied answer for that parameter.
+- omitting an answer key also means unresolved, so normal runtime fallback applies if that parameter is reached.
 
-Hidden parameters are included only when the command uses `--ask-hidden`. Without `--ask-hidden`, hidden parameters are omitted from prompt JSON export and ignored on prompt JSON import.
+Important:
 
-Answer semantics:
+- `project print-init-json` and `init` must use the same resolved `--dest-folder` if you want the printed `node-id` values and prompt metadata to remain valid.
+- if you print for one init placement and later run init with a different `--dest-folder`, the earlier prompt document no longer matches that later init run correctly.
 
-- `null` means do not answer this parameter from JSON; if the parameter is reached, OpenPlate uses the normal runtime fallback such as an existing value or template/default value
-- `""` means an intentional blank string answer
-- any other non-null string means an explicit supplied answer for that parameter
-- omitting an answer key also means unresolved, so normal runtime fallback applies if that parameter is reached
+### Update Prompt JSON
 
-Import semantics:
+For update, the prompt document is bound to the same selected project context and tracked template state that the later update run must use.
 
-- OpenPlate matches imported prompt JSON by `node-id`.
-- `info` is ignored on import.
-- For parameters in scope for the command, any non-null answer is authoritative even if runtime fallback already has an existing or default value.
-- `--ask-again` affects interactive prompting. It does not prevent a non-null prompt JSON answer from being applied.
+Export the update prompt tree:
 
-Notes:
+```
+openplate project print-update-json --project-root C:/workspaces/my-repo
+```
 
-- `project print-init-json` is the only mode that walks the full declared sibling tree without applying sibling `condition` filters.
-- `--prompts-json-file` and `--prompts-json-stdin` are supported for init only.
-- `project update` does not expose prompt JSON flags.
+Import update answers from a file or standard input against the same project root and tracked state:
+
+```
+openplate update --project-root C:/workspaces/my-repo --prompts-json-file prompts.json
+type prompts.json | openplate update --project-root C:/workspaces/my-repo --prompts-json-stdin
+```
+
+`project print-update-json` is read-only. It does not update `.openplate.project.yaml` or write template output.
+
+The update export always includes verbose metadata and uses a structured answer shape:
+
+```json
+[
+  {
+    "node-id": "15cff52",
+    "answers": {
+      "service_name": {
+        "supplied": false,
+        "value": null
+      }
+    },
+    "info": {
+      "template": "https://github.com/my-org/ot-template.git#v1",
+      "dest_folder": "services/api",
+      "parameters": {
+        "service_name": {
+          "current": "existing-name",
+          "default": "default-name",
+          "existing": "existing-name",
+          "description": "Service Name",
+          "choices": null,
+          "hidden": null,
+          "required": false
+        }
+      }
+    }
+  }
+]
+```
+
+Update semantics:
+
+- `node-id` is the import/export identity for a reached update node in the selected project context.
+- every update answer entry uses `supplied` plus `value`.
+- `supplied: false` with `value: null` means leave the parameter untouched and use normal existing/default logic.
+- `supplied: true` with a non-null string means an explicit supplied answer. `""` remains an explicit blank string.
+- `supplied: true` with `value: null` means clear any persisted explicit override and continue with normal default logic.
+- update prompt JSON always includes hidden parameters. `--ask-hidden` does not gate update prompt JSON scope.
+- `info.parameters.current` shows the effective value update would use if the answer entry stays unsupplied.
+- `info.parameters.existing` shows the persisted explicit project value, if any.
+- `info.parameters.default` shows the processed template or global default, if any.
+
+Important:
+
+- `project print-update-json` and `update` must use the same selected project root and tracked template state if you want the printed `node-id` values and prompt metadata to remain valid.
+
+Shared prompt JSON notes:
+
+- `project print-init-json` and `project print-update-json` are the only modes that walk the full declared sibling tree without applying sibling `condition` filters.
 - imported nodes that are not processed by the run are ignored and logged by `node-id`.
 - OpenPlate warns when supplied prompt answers are left unused for a matched node.
+- init and update both reject invalid choice values under the same rules as interactive prompting.
 
 ## Command: verify
 
@@ -290,7 +356,7 @@ or
 openplate update --ask-hidden
 ```
 
-The same flag controls prompt JSON scope. With `--ask-hidden`, hidden parameters are included in `project print-init-json` output and may be answered through `--prompts-json-file` or `--prompts-json-stdin` on `init`. Without it, hidden parameters are omitted from export and ignored on import.
+The same flag controls init prompt JSON scope. With `--ask-hidden`, hidden parameters are included in `project print-init-json` output and may be answered through `--prompts-json-file` or `--prompts-json-stdin` on `init`. Without it, hidden parameters are omitted from init export and ignored on init import. Update prompt JSON is different: hidden parameters are always included in `project print-update-json` output and remain in scope on update prompt JSON import.
 
 # Template Branches
 

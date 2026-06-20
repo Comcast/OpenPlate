@@ -103,7 +103,7 @@ parameters:
 
 In order for a user to specify it interactively, they need to pass "--ask-hidden" to their command and possibly "--ask-again".
 
-The same `--ask-hidden` flag also controls prompt JSON scope. Hidden parameters are included in `openplate project print-init-json` output only when `--ask-hidden` is used, and hidden values from `openplate init --prompts-json-file` or `openplate init --prompts-json-stdin` are applied only when `--ask-hidden` is active for that command.
+The same `--ask-hidden` flag also controls init prompt JSON scope. Hidden parameters are included in `openplate project print-init-json` output only when `--ask-hidden` is used, and hidden values from `openplate init --prompts-json-file` or `openplate init --prompts-json-stdin` are applied only when `--ask-hidden` is active for that command. Update prompt JSON is different: `openplate project print-update-json` always includes hidden parameters, and hidden values supplied through `openplate update --prompts-json-file` or `openplate update --prompts-json-stdin` remain in scope without needing `--ask-hidden`.
 
 ### "Conditionally Hidden"
 

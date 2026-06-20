@@ -28,8 +28,8 @@ from openplate.prompts.prompt_document import PromptInputTracker
 from openplate.prompts.prompt_parameter_resolver import (
     log_unused_prompt_parameters,
     mark_template_used,
-    resolve_runtime_parameter_fallback,
-    try_resolve_parameter_without_prompt,
+    resolve_parameter_defaults,
+    resolve_supplied_prompt_answer,
 )
 from openplate.template_processor import compile_template_options
 
@@ -88,10 +88,9 @@ def resolve_parameter(
     already_asked: bool,
     fail_on_prompt: bool,
     prompt_input_tracker: Optional[PromptInputTracker] = None,
-) -> (bool, str):
+) -> tuple[bool, Optional[str], bool]:
     key_exists = parameter.name in config_project_template.parameters
-    existing_value = config_project_template.parameters.get(parameter.name)
-    fallback_value = resolve_runtime_parameter_fallback(
+    existing_value, default_value = resolve_parameter_defaults(
         settings,
         runtime_settings,
         config_template,
@@ -101,11 +100,13 @@ def resolve_parameter(
         template_base_folder,
         parameter,
     )
+    fallback_value = existing_value if existing_value is not None else default_value
+    clear_existing = False
 
     # Auto answer case, hidden:
     if parameter.hidden and not runtime_settings.ask_hidden:
         logging.debug(f"not prompting for hidden parameter[{parameter.name}]")
-        return False, fallback_value
+        return False, fallback_value, False
 
     effective_hidden = resolve_parameter_hidden_state(
         config_template,
@@ -120,23 +121,29 @@ def resolve_parameter(
     # Auto answer case, hidden:
     if effective_hidden and not runtime_settings.ask_hidden:
         logging.debug(f"not prompting for hidden parameter[{parameter.name}]")
-        return False, fallback_value
+        return False, fallback_value, False
 
-    resolved_answer = try_resolve_parameter_without_prompt(
+    supplied_answer = resolve_supplied_prompt_answer(
         config_project_template,
         parameter,
-        existing_value,
-        fallback_value if existing_value is None else None,
-        fail_on_prompt,
         prompt_input_tracker,
     )
-    if resolved_answer is not None:
-        return resolved_answer
+    if supplied_answer is not None:
+        if supplied_answer.clear_existing:
+            clear_existing = True
+            key_exists = False
+            existing_value = None
+            fallback_value = default_value
+        elif supplied_answer.value is not None:
+            return False, supplied_answer.value, False
+
+    if fail_on_prompt and fallback_value is not None:
+        return False, fallback_value, clear_existing
 
     # Auto answer case, already answered and not re-asking:
     if not runtime_settings.ask_again and key_exists:
         logging.debug(f"not re-prompting for already answered parameter[{parameter.name}]")
-        return False, fallback_value
+        return False, fallback_value, False
 
     # Ask:
     while True:
@@ -163,12 +170,12 @@ def resolve_parameter(
             if parameter.choices and value.strip() not in parameter.choices:
                 print(f"ERROR: Value must be one of: {', '.join(parameter.choices)}")
                 continue
-            return True, value.strip()
+            return True, value.strip(), False
 
         # auto-answer case: if no answer and a default exists, take it:
         if fallback_value is not None:
             logging.debug(f"Taking default value [{fallback_value}] for unanswered parameter[{parameter.name}]")
-            return True, fallback_value
+            return True, fallback_value, clear_existing
 
         print("ERROR: This question is mandatory, please answer")
 
@@ -211,7 +218,7 @@ def resolve(
     for parameter in config_template.parameters:
         original_value = config_project_template.parameters.get(parameter.name)
 
-        asked, new_value = resolve_parameter(
+        asked, new_value, clear_existing = resolve_parameter(
             settings,
             runtime_settings,
             config_template,
@@ -227,6 +234,17 @@ def resolve(
 
         if asked:
             any_asked = True
+
+        if clear_existing:
+            any_changed = True
+            if new_value is None:
+                config_project_template.parameters.pop(parameter.name, None)
+            else:
+                config_project_template.parameters[parameter.name] = new_value
+                cleared_parameters = getattr(config_project_template, "_prompt_cleared_parameters", set())
+                cleared_parameters.add(parameter.name)
+                setattr(config_project_template, "_prompt_cleared_parameters", cleared_parameters)
+            continue
 
         if new_value != original_value:
             any_changed = True

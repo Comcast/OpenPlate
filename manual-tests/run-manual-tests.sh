@@ -126,6 +126,9 @@ invoke_openplate_in_dir() {
   local log_path="$artifact_dir/$log_name"
   local stdin_file=""
   local exit_code
+  local source_root
+
+  source_root="$(python_path_arg "$REPO_ROOT/src")"
 
   if [[ -n "$stdin_payload" ]]; then
     stdin_file="$artifact_dir/${log_name}.stdin"
@@ -136,12 +139,12 @@ invoke_openplate_in_dir() {
   if [[ -n "$stdin_file" ]]; then
     (
       cd "$working_dir"
-      env PYTHONPATH="$(python_module_search_path)" "$PYTHON_EXE" -m openplate "$@" < "$stdin_file"
+      "$PYTHON_EXE" -c 'import sys; sys.path.insert(0, sys.argv[1]); del sys.argv[1]; from openplate.__main__ import main; main()' "$source_root" "$@" < "$stdin_file"
     ) 2>&1 | tee "$log_path" >/dev/null
   else
     (
       cd "$working_dir"
-      env PYTHONPATH="$(python_module_search_path)" "$PYTHON_EXE" -m openplate "$@"
+      "$PYTHON_EXE" -c 'import sys; sys.path.insert(0, sys.argv[1]); del sys.argv[1]; from openplate.__main__ import main; main()' "$source_root" "$@"
     ) 2>&1 | tee "$log_path" >/dev/null
   fi
   exit_code=${PIPESTATUS[0]}
@@ -311,6 +314,64 @@ document = [
         },
     }
 ]
+Path(sys.argv[2]).write_text(json.dumps(document, indent=2), encoding="utf-8")
+PY
+}
+
+build_case3_update_file_import_json() {
+  local update_export_path="$1"
+  local update_import_path="$2"
+  "$PYTHON_EXE" - "$(python_path_arg "$update_export_path")" "$(python_path_arg "$update_import_path")" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+document = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+root_node = next(node for node in document if "service_name" in node["answers"])
+worker_node = next(node for node in document if "worker_name" in node["answers"])
+
+root_node["answers"]["service_name"] = {"supplied": True, "value": "json-update-file-service"}
+root_node["answers"]["hidden_name"] = {"supplied": True, "value": "json-update-hidden"}
+root_node["answers"]["extra_answer"] = {"supplied": True, "value": "ignored-value"}
+worker_node["answers"]["worker_name"] = {"supplied": True, "value": "json-update-file-service-worker"}
+
+Path(sys.argv[2]).write_text(json.dumps(document, indent=2), encoding="utf-8")
+PY
+}
+
+build_case3_update_invalid_choice_json() {
+  local update_export_path="$1"
+  local update_invalid_path="$2"
+  "$PYTHON_EXE" - "$(python_path_arg "$update_export_path")" "$(python_path_arg "$update_invalid_path")" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+document = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+root_node = next(node for node in document if "include_worker" in node["answers"])
+root_node["answers"]["include_worker"] = {"supplied": True, "value": "maybe"}
+
+Path(sys.argv[2]).write_text(json.dumps(document, indent=2), encoding="utf-8")
+PY
+}
+
+build_case3_update_stdin_import_json() {
+  local update_export_path="$1"
+  local update_stdin_path="$2"
+  "$PYTHON_EXE" - "$(python_path_arg "$update_export_path")" "$(python_path_arg "$update_stdin_path")" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+document = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+root_node = next(node for node in document if "service_name" in node["answers"])
+worker_node = next(node for node in document if "worker_name" in node["answers"])
+
+root_node["answers"]["service_name"] = {"supplied": True, "value": "json-update-stdin-service"}
+root_node["answers"]["include_worker"] = {"supplied": True, "value": "true"}
+root_node["answers"]["hidden_name"] = {"supplied": True, "value": "stdin-update-hidden"}
+worker_node["answers"]["worker_name"] = {"supplied": True, "value": "json-update-stdin-service-worker"}
+
 Path(sys.argv[2]).write_text(json.dumps(document, indent=2), encoding="utf-8")
 PY
 }
@@ -579,16 +640,22 @@ run_case3() {
   local verbose_path="$artifact_dir/prompts-verbose.json"
   local file_import_path="$artifact_dir/prompts-import-file.json"
   local stdin_import_path="$artifact_dir/prompts-import-stdin.json"
+  local update_file_export_path="$artifact_dir/update-prompts-file.json"
+  local update_file_import_path="$artifact_dir/update-prompts-file-import.json"
+  local update_export_path="$artifact_dir/update-prompts.json"
+  local update_invalid_path="$artifact_dir/update-prompts-invalid-choice.json"
+  local update_stdin_import_path="$artifact_dir/update-prompts-stdin.json"
 
-  invoke_openplate "$case_id" '01-print-init-json-compact.log' '0' '' -c "$(to_windows_path "$config_path")" project --project-root "$(to_windows_path "$export_project")" print-init-json "$source_url" >/dev/null
+  invoke_openplate "$case_id" '01-print-init-json-compact.log' '0' '' -c "$(to_windows_path "$config_path")" project --project-root "$(to_windows_path "$export_project")" print-init-json "$source_url" --dest-folder 'imported/root' >/dev/null
   cp "$artifact_dir/01-print-init-json-compact.log" "$compact_path"
   assert_path_missing "$export_project/.openplate.project.yaml"
   assert_file_not_contains "$compact_path" '"info"'
 
-  invoke_openplate "$case_id" '02-print-init-json-verbose.log' '0' '' -c "$(to_windows_path "$config_path")" project --project-root "$(to_windows_path "$export_project")" --ask-hidden print-init-json "$source_url" --verbose >/dev/null
+  invoke_openplate "$case_id" '02-print-init-json-verbose.log' '0' '' -c "$(to_windows_path "$config_path")" project --project-root "$(to_windows_path "$export_project")" --ask-hidden print-init-json "$source_url" --dest-folder 'imported/root' --verbose >/dev/null
   cp "$artifact_dir/02-print-init-json-verbose.log" "$verbose_path"
   assert_file_contains "$verbose_path" '"info"'
   assert_file_contains "$verbose_path" '"hidden_name"'
+  assert_file_contains "$verbose_path" '"dest_folder": "imported/root"'
 
   build_case3_file_import_json "$verbose_path" "$file_import_path"
   build_case3_stdin_import_json "$compact_path" "$stdin_import_path"
@@ -603,14 +670,54 @@ run_case3() {
 
   local stdin_payload
   stdin_payload="$(cat "$stdin_import_path")"
-  invoke_openplate "$case_id" '04-init-prompts-json-stdin.log' '0' "$stdin_payload" -c "$(to_windows_path "$config_path")" init --project-root "$(to_windows_path "$stdin_import_project")" --dest-folder 'stdin/root' "$source_url" --prompts-json-stdin >/dev/null
-  assert_file_contains "$stdin_import_project/generated/stdin/root/managed/root.txt" 'service=json-stdin-service'
+  invoke_openplate "$case_id" '04-init-prompts-json-stdin.log' '0' "$stdin_payload" -c "$(to_windows_path "$config_path")" init --project-root "$(to_windows_path "$stdin_import_project")" --dest-folder 'imported/root' "$source_url" --prompts-json-stdin >/dev/null
+  assert_file_contains "$stdin_import_project/generated/imported/root/managed/root.txt" 'service=json-stdin-service'
   assert_path_missing "$stdin_import_project/generated/worker/json-stdin-service/managed/worker.txt"
+
+  local update_file_config_before="$case_work/update-file-config-before.yaml"
+  cp "$file_import_project/.openplate.project.yaml" "$update_file_config_before"
+  invoke_openplate "$case_id" '05-print-update-json-file.log' '0' '' -c "$(to_windows_path "$config_path")" project --project-root "$(to_windows_path "$file_import_project")" print-update-json >/dev/null
+  cp "$artifact_dir/05-print-update-json-file.log" "$update_file_export_path"
+  assert_file_contains "$update_file_export_path" '"supplied": false'
+  assert_file_contains "$update_file_export_path" '"current": "json-file-service"'
+  assert_file_contains "$update_file_export_path" '"hidden_name"'
+  cmp -s "$update_file_config_before" "$file_import_project/.openplate.project.yaml"
+
+  build_case3_update_file_import_json "$update_file_export_path" "$update_file_import_path"
+  local update_file_log
+  update_file_log="$(invoke_openplate "$case_id" '06-update-prompts-json-file.log' '0' '' -d -c "$(to_windows_path "$config_path")" update --project-root "$(to_windows_path "$file_import_project")" --prompts-json-file "$(to_windows_path "$update_file_import_path")")"
+  assert_file_contains "$update_file_log" 'Ignoring unused supplied prompt parameter'
+  assert_file_contains "$file_import_project/generated/imported/root/managed/root.txt" 'service=json-update-file-service'
+  assert_file_contains "$file_import_project/generated/imported/root/managed/root.txt" 'hidden=json-update-hidden'
+  assert_file_contains "$file_import_project/generated/worker/json-file-service/managed/worker.txt" 'worker=json-file-service-worker'
+  assert_file_contains "$file_import_project/generated/worker/json-update-file-service/managed/worker.txt" 'worker=json-update-file-service-worker'
+
+  local update_stdin_config_before="$case_work/update-stdin-config-before.yaml"
+  cp "$stdin_import_project/.openplate.project.yaml" "$update_stdin_config_before"
+  invoke_openplate "$case_id" '07-print-update-json-stdin.log' '0' '' -c "$(to_windows_path "$config_path")" project --project-root "$(to_windows_path "$stdin_import_project")" print-update-json >/dev/null
+  cp "$artifact_dir/07-print-update-json-stdin.log" "$update_export_path"
+  assert_file_contains "$update_export_path" '"worker_name"'
+  assert_file_contains "$update_export_path" '"hidden_name"'
+  assert_file_contains "$update_export_path" '"supplied": false'
+  cmp -s "$update_stdin_config_before" "$stdin_import_project/.openplate.project.yaml"
+
+  build_case3_update_invalid_choice_json "$update_export_path" "$update_invalid_path"
+  local invalid_choice_log
+  invalid_choice_log="$(invoke_openplate "$case_id" '08-update-prompts-json-invalid-choice.log' '1' '' -c "$(to_windows_path "$config_path")" update --project-root "$(to_windows_path "$stdin_import_project")" --prompts-json-file "$(to_windows_path "$update_invalid_path")")"
+  assert_file_contains "$invalid_choice_log" 'must be one of'
+
+  build_case3_update_stdin_import_json "$update_export_path" "$update_stdin_import_path"
+  local update_stdin_payload
+  update_stdin_payload="$(cat "$update_stdin_import_path")"
+  invoke_openplate "$case_id" '09-update-prompts-json-stdin.log' '0' "$update_stdin_payload" -c "$(to_windows_path "$config_path")" update --project-root "$(to_windows_path "$stdin_import_project")" --prompts-json-stdin >/dev/null
+  assert_file_contains "$stdin_import_project/generated/imported/root/managed/root.txt" 'service=json-update-stdin-service'
+  assert_file_contains "$stdin_import_project/generated/imported/root/managed/root.txt" 'hidden=stdin-update-hidden'
+  assert_file_contains "$stdin_import_project/generated/worker/json-update-stdin-service/managed/worker.txt" 'worker=json-update-stdin-service-worker'
 
   write_summary "$case_id" \
     "Catalog repo: $repo_path" \
     "Source: $source_url" \
-    'Validated compact and verbose prompt export, read-only export behavior, file and stdin imports, hidden prompt scope, ignored extra nodes, unused answers, sibling prompt materialization, and dest-folder-independent import identity.'
+    'Validated init prompt export with explicit dest-folder, file and stdin init imports using the same placement context, update prompt export, update file and stdin imports, update hidden-parameter scope, update full-tree export for conditional siblings, ignored extra answers, and invalid choice rejection.'
 }
 
 run_case4() {

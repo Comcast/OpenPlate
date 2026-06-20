@@ -38,6 +38,48 @@ def _require_optional_bool(value, field_name: str):
 
 
 @dataclass
+class PromptAnswerEntry:
+    value: Optional[str]
+    supplied: bool
+    object_shape: bool = False
+
+    @classmethod
+    def from_json_data(cls, data, answer_name: str):
+        if isinstance(data, dict):
+            if "supplied" not in data:
+                raise ValueError("Prompt answer entry object must include a 'supplied' field")
+            supplied = data.get("supplied")
+            if not isinstance(supplied, bool):
+                raise TypeError("Prompt answer entry 'supplied' must be a boolean")
+
+            if "value" not in data:
+                raise ValueError("Prompt answer entry object must include a 'value' field")
+            value = data.get("value")
+            _require_optional_string(value, answer_name)
+
+            if not supplied and value is not None:
+                raise ValueError("Prompt answer entry with supplied=false must use value null")
+
+            return cls(value, supplied, True)
+
+        _require_optional_string(data, answer_name)
+        return cls(data, data is not None, False)
+
+    def to_json_data(self):
+        if self.object_shape:
+            return {
+                "supplied": self.supplied,
+                "value": self.value,
+            }
+        return self.value
+
+    def counts_as_supplied(self) -> bool:
+        if self.object_shape:
+            return self.supplied
+        return self.value is not None
+
+
+@dataclass
 class PromptParameterValue:
     default: Optional[str]
     existing: Optional[str]
@@ -45,6 +87,8 @@ class PromptParameterValue:
     choices: Optional[list[str]]
     hidden: Optional[bool]
     required: Optional[bool]
+    current: Optional[str] = None
+    include_current: bool = False
 
     @classmethod
     def from_json_data(cls, data):
@@ -64,6 +108,7 @@ class PromptParameterValue:
         _require_optional_string(data.get("description"), "description")
         _require_optional_bool(data.get("hidden"), "hidden")
         _require_optional_bool(data.get("required"), "required")
+        _require_optional_string(data.get("current"), "current")
 
         return cls(
             data.get("default"),
@@ -72,10 +117,12 @@ class PromptParameterValue:
             choices,
             data.get("hidden"),
             data.get("required"),
+            data.get("current"),
+            "current" in data,
         )
 
     def to_json_data(self):
-        return {
+        result = {
             "default": self.default,
             "existing": self.existing,
             "description": self.description,
@@ -83,6 +130,9 @@ class PromptParameterValue:
             "hidden": self.hidden,
             "required": self.required,
         }
+        if self.include_current:
+            result["current"] = self.current
+        return result
 
 
 @dataclass
@@ -198,7 +248,7 @@ class PromptNodeInfo:
 @dataclass
 class PromptTemplateNode:
     node_id: str
-    answers: dict[str, Optional[str]]
+    answers: dict[str, PromptAnswerEntry]
     info: Optional[PromptNodeInfo] = None
 
     @classmethod
@@ -220,8 +270,7 @@ class PromptTemplateNode:
         for name, value in raw_answers.items():
             if not isinstance(name, str) or not name:
                 raise ValueError("Prompt answer names must be non-empty strings")
-            _require_optional_string(value, name)
-            answers[name] = value
+            answers[name] = PromptAnswerEntry.from_json_data(value, name)
 
         raw_info = data.get("info")
         info = None
@@ -251,7 +300,10 @@ class PromptTemplateNode:
     def to_json_data(self, verbose: bool):
         result = {
             "node-id": self.node_id,
-            "answers": self.answers,
+            "answers": {
+                name: answer.to_json_data()
+                for name, answer in self.answers.items()
+            },
         }
         if verbose and self.info is not None:
             result["info"] = self.info.to_json_data()
@@ -300,6 +352,7 @@ class PromptDocumentBuilder:
         parameters: Optional[dict[str, PromptParameterValue]],
         require_sibling_templates: Optional[list[PromptSiblingTemplateInfo]] = None,
         identity_dest_folder: Optional[str] = None,
+        structured_answers: bool = False,
     ):
         normalized_dest_folder = normalize_prompt_dest_folder(dest_folder)
         normalized_identity_dest_folder = normalize_prompt_dest_folder(
@@ -323,7 +376,10 @@ class PromptDocumentBuilder:
             )
             answers = {}
             if parameters is not None:
-                answers = {name: None for name in parameters.keys()}
+                answers = {
+                    name: PromptAnswerEntry(None, False, structured_answers)
+                    for name in parameters.keys()
+                }
 
             existing_node = PromptTemplateNode(node_id, answers, info)
             self._nodes.append(existing_node)
@@ -331,7 +387,10 @@ class PromptDocumentBuilder:
             return True
 
         if parameters is not None:
-            existing_node.answers = {name: None for name in parameters.keys()}
+            existing_node.answers = {
+                name: PromptAnswerEntry(None, False, structured_answers)
+                for name in parameters.keys()
+            }
             if existing_node.info is not None:
                 existing_node.info.parameters = parameters
         if existing_node.info is not None and require_sibling_templates is not None:
@@ -398,6 +457,16 @@ class PromptInputTracker:
             self._used_node_ids.add(node.node_id)
 
     def get_parameter_value(self, template_or_node_id: str, dest_folder_or_name: Optional[str], name: Optional[str] = None):
+        answer = self.get_parameter_answer(template_or_node_id, dest_folder_or_name, name)
+        if answer is None:
+            return None, False
+
+        if answer.object_shape:
+            return answer.value, answer.supplied
+
+        return answer.value, True
+
+    def get_parameter_answer(self, template_or_node_id: str, dest_folder_or_name: Optional[str], name: Optional[str] = None) -> Optional[PromptAnswerEntry]:
         if name is None:
             node = self.get_template(template_or_node_id)
             parameter_name = dest_folder_or_name
@@ -406,13 +475,13 @@ class PromptInputTracker:
             parameter_name = name
 
         if node is None or parameter_name is None:
-            return None, False
+            return None
 
         if parameter_name not in node.answers:
-            return None, False
+            return None
 
         self._used_parameter_names[node.node_id].add(parameter_name)
-        return node.answers.get(parameter_name), True
+        return node.answers.get(parameter_name)
 
     def ignored_templates(self) -> list[PromptTemplateNode]:
         if self._document is None:
@@ -430,7 +499,7 @@ class PromptInputTracker:
         used_names = self._used_parameter_names.get(node.node_id, set())
         unused = []
         for answer_name, answer_value in node.answers.items():
-            if answer_value is None:
+            if not answer_value.counts_as_supplied():
                 continue
             if answer_name not in used_names:
                 unused.append(answer_name)

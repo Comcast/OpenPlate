@@ -46,6 +46,36 @@ class UpdateOptions:
         self.prompt_document = prompt_document
 
 
+def _remove_cleared_prompt_overrides(config_project: project_config.ProjectConfig):
+    for template in config_project.templates:
+        cleared_parameters = getattr(template, "_prompt_cleared_parameters", set())
+        if not cleared_parameters:
+            continue
+        for parameter_name in cleared_parameters:
+            template.parameters.pop(parameter_name, None)
+
+
+async def print_prompt_document(
+    settings: OpenPlateSettings,
+    runtime_settings: OpenPlateRuntimeSettings,
+    destination: str,
+):
+    config_project = project_config.from_file(
+        settings,
+        os.path.join(destination, project_config.project_config_file_name)
+    )
+    prompt_document = await collect_prompt_document_all(
+        settings,
+        runtime_settings,
+        destination,
+        config_project,
+        structured_answers=True,
+        always_include_hidden=True,
+        include_current=True,
+    )
+    print(prompt_document.to_json_string(verbose=True))
+
+
 async def run(
     settings: OpenPlateSettings,
     runtime_settings: OpenPlateRuntimeSettings,
@@ -58,6 +88,10 @@ async def run(
         settings,
         os.path.join(options.destination, project_config.project_config_file_name)
     )
+
+    prompt_input_tracker = None
+    if options.prompt_document is not None:
+        prompt_input_tracker = PromptInputTracker(options.prompt_document)
 
     (config_updated, found_changes, sha) = await source_template_recursive_walk_all(
         settings,
@@ -75,13 +109,16 @@ async def run(
         options.create_non_template_files,
         options.update_non_template_files,
         False,
-        False,
-        None,
+        options.prompt_document is not None,
+        prompt_input_tracker,
     )
+
+    log_ignored_prompt_templates(prompt_input_tracker)
 
     # if config_updated:
 
     # Always attempt to fix config file (to update name references which should be urls for example)
+    _remove_cleared_prompt_overrides(config_project)
     project_config.to_file(
         config_project,
         os.path.join(options.destination, project_config.project_config_file_name)

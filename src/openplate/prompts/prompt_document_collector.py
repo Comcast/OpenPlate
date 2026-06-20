@@ -44,6 +44,9 @@ async def _collect_prompt_document_template(
     prompt_document_builder: PromptDocumentBuilder,
     source_cache: CommandTemplateSourceCache,
     visited_template_keys: set,
+    structured_answers: bool,
+    always_include_hidden: bool,
+    include_current: bool,
 ):
     if not os.path.exists(project_folder):
         raise FileNotFoundError("Project folder not found: " + project_folder)
@@ -80,6 +83,8 @@ async def _collect_prompt_document_template(
             config_project_template,
             project_folder,
             source.folder_path(),
+            always_include_hidden=always_include_hidden,
+            include_current=include_current,
         )
         template_options = template_processor.compile_template_options(
             config_template,
@@ -108,6 +113,7 @@ async def _collect_prompt_document_template(
             parameters,
             None,
             prompt_identity_dest_folder(config_project_template),
+            structured_answers=structured_answers,
         )
         return
 
@@ -157,6 +163,9 @@ async def _collect_prompt_document_template(
                 prompt_document_builder,
                 source_cache,
                 visited_template_keys,
+                structured_answers,
+                always_include_hidden,
+                include_current,
             )
         except RuntimeError as ex:
             raise RuntimeError(
@@ -169,6 +178,7 @@ async def _collect_prompt_document_template(
         parameters,
         sibling_declarations,
         prompt_identity_dest_folder(config_project_template),
+        structured_answers=structured_answers,
     )
 
 
@@ -193,6 +203,9 @@ async def collect_prompt_document_single(
             prompt_document_builder,
             source_cache,
             visited_template_keys,
+            False,
+            False,
+            False,
         )
     finally:
         close_command_template_source_cache(source_cache)
@@ -205,6 +218,9 @@ async def collect_prompt_document_all(
     runtime_settings: OpenPlateRuntimeSettings,
     destination: str,
     config_project: project_config.ProjectConfig,
+    structured_answers: bool = False,
+    always_include_hidden: bool = False,
+    include_current: bool = False,
 ) -> PromptDocument:
     prompt_document_builder = PromptDocumentBuilder()
     source_cache = CommandTemplateSourceCache(settings)
@@ -221,6 +237,9 @@ async def collect_prompt_document_all(
                 prompt_document_builder,
                 source_cache,
                 visited_template_keys,
+                structured_answers,
+                always_include_hidden,
+                include_current,
             )
     finally:
         close_command_template_source_cache(source_cache)
