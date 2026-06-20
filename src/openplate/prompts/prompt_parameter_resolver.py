@@ -17,6 +17,7 @@
 #
 #              This product includes software developed at Comcast (https://www.comcast.com/).#
 import logging
+from dataclasses import dataclass
 from typing import Optional
 
 from openplate import template_processor
@@ -27,6 +28,12 @@ from openplate.cfg.open_plate_settings import OpenPlateRuntimeSettings, OpenPlat
 from openplate.cfg.template_config import TemplateConfigParameter
 from openplate.project_template_identity import prompt_dest_folder, prompt_node_id, prompt_template_reference
 from openplate.prompts.prompt_document import PromptInputTracker, PromptParameterValue
+
+
+@dataclass
+class SuppliedPromptAnswer:
+    value: Optional[str]
+    clear_existing: bool = False
 
 
 def _compile_parameter_options(
@@ -164,11 +171,13 @@ def describe_prompt_parameters(
     config_project_template: project_config.ProjectTemplateConfig,
     project_base_folder: str,
     template_base_folder: str,
+    always_include_hidden: bool = False,
+    include_current: bool = False,
 ) -> dict[str, PromptParameterValue]:
     result = {}
 
     for parameter in config_template.parameters:
-        if parameter.hidden and not runtime_settings.ask_hidden:
+        if parameter.hidden and not (runtime_settings.ask_hidden or always_include_hidden):
             continue
 
         existing_value, default_value = resolve_parameter_defaults(
@@ -181,6 +190,18 @@ def describe_prompt_parameters(
             template_base_folder,
             parameter,
         )
+        current_value = None
+        if include_current:
+            current_value = resolve_runtime_parameter_fallback(
+                settings,
+                runtime_settings,
+                config_template,
+                config_project,
+                config_project_template,
+                project_base_folder,
+                template_base_folder,
+                parameter,
+            )
         result[parameter.name] = PromptParameterValue(
             default_value,
             existing_value,
@@ -188,9 +209,39 @@ def describe_prompt_parameters(
             parameter.choices,
             parameter.hidden,
             existing_value is None and default_value is None,
+            current=current_value,
+            include_current=include_current,
         )
 
     return result
+
+
+def resolve_supplied_prompt_answer(
+    config_project_template: project_config.ProjectTemplateConfig,
+    parameter: TemplateConfigParameter,
+    prompt_input_tracker: Optional[PromptInputTracker],
+) -> Optional[SuppliedPromptAnswer]:
+    if prompt_input_tracker is not None:
+        supplied_answer = prompt_input_tracker.get_parameter_answer(
+            prompt_node_id(config_project_template),
+            parameter.name,
+        )
+        if supplied_answer is not None:
+            if supplied_answer.object_shape:
+                if not supplied_answer.supplied:
+                    return None
+                if supplied_answer.value is None:
+                    return SuppliedPromptAnswer(None, True)
+                if parameter.choices and supplied_answer.value not in parameter.choices:
+                    raise ValueError(f"Template parameter '{parameter.name}' must be one of: {', '.join(parameter.choices)}")
+                return SuppliedPromptAnswer(supplied_answer.value)
+
+            if supplied_answer.value is not None:
+                if parameter.choices and supplied_answer.value not in parameter.choices:
+                    raise ValueError(f"Template parameter '{parameter.name}' must be one of: {', '.join(parameter.choices)}")
+                return SuppliedPromptAnswer(supplied_answer.value)
+
+    return None
 
 
 def try_resolve_parameter_without_prompt(
@@ -203,15 +254,14 @@ def try_resolve_parameter_without_prompt(
 ):
     fallback_value = existing_value if existing_value is not None else default_value
 
-    if prompt_input_tracker is not None:
-        supplied_value, has_supplied_value = prompt_input_tracker.get_parameter_value(
-            prompt_node_id(config_project_template),
-            parameter.name,
-        )
-        if has_supplied_value and supplied_value is not None:
-            if parameter.choices and supplied_value not in parameter.choices:
-                raise ValueError(f"Template parameter '{parameter.name}' must be one of: {', '.join(parameter.choices)}")
-            return False, supplied_value
+    supplied_answer = resolve_supplied_prompt_answer(
+        config_project_template,
+        parameter,
+        prompt_input_tracker,
+    )
+    if supplied_answer is not None and not supplied_answer.clear_existing:
+        if supplied_answer.value is not None:
+            return False, supplied_answer.value
 
     if fail_on_prompt and fallback_value is not None:
         return False, fallback_value

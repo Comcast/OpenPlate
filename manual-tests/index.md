@@ -31,7 +31,7 @@ The bash runner materializes local git-backed template repositories from the che
 | --- | --- | --- | --- |
 | `case-1` | Configure a local environment and initialize from URL-based local catalog sources | `--version`, `config set`, `config get`, `init` | [manual-tests/case-1.md](manual-tests/case-1.md) |
 | `case-2` | Exercise prompt-driven init behavior and template-command safety gates | `init`, `config set --allow-template-commands`, `--ask-hidden` | [manual-tests/case-2.md](manual-tests/case-2.md) |
-| `case-3` | Export prompt JSON, mutate only the answers that matter, and import via file and stdin | `project print-init-json`, `init --prompts-json-file`, `init --prompts-json-stdin` | [manual-tests/case-3.md](manual-tests/case-3.md) |
+| `case-3` | Export prompt JSON for init and update, mutate only the answers that matter, and import via file and stdin using the same execution context | `project print-init-json`, `project print-update-json`, `init --prompts-json-file`, `init --prompts-json-stdin`, `update --prompts-json-file`, `update --prompts-json-stdin` | [manual-tests/case-3.md](manual-tests/case-3.md) |
 | `case-4` | Create drift, repair it with update modes, and verify the final state | `update`, `verify` | [manual-tests/case-4.md](manual-tests/case-4.md) |
 
 ## Coverage Matrix
@@ -80,13 +80,13 @@ The matrix below accounts for the current visible CLI surface from [docs/command
 | `init -r/--url` legacy alias | `automated-only` | Compatibility syntax remains covered by focused parser/runtime tests instead of manual cases. |
 | `project print-init-json` compact export | `manual:case-3` | Case 3 captures the compact JSON artifact. |
 | `project print-init-json --verbose` | `manual:case-3` | Case 3 captures and validates the verbose JSON artifact. |
-| Prompt JSON file import | `manual:case-3` | Case 3 imports prompt data from a generated file artifact. |
-| Prompt JSON stdin import | `manual:case-3` | Case 3 imports prompt data by piping a JSON document to stdin. |
-| Prompt JSON hidden-scope behavior | `manual:case-3` | Case 3 contrasts non-hidden compact export with hidden-aware verbose export and import. |
-| Prompt JSON dest-folder-independent node identity | `manual:case-3` | Case 3 exports from `.` and imports into a different init dest-folder while keeping the same node IDs. |
+| Prompt JSON file import | `manual:case-3` | Case 3 imports prompt data from generated file artifacts for both init and update. |
+| Prompt JSON stdin import | `manual:case-3` | Case 3 imports prompt data by piping JSON documents to stdin for both init and update. |
+| Prompt JSON hidden-scope behavior | `manual:case-3` | Case 3 contrasts init hidden gating with update prompt JSON always including hidden parameters. |
+| Prompt JSON init placement consistency | `manual:case-3` | Case 3 prints init prompt JSON with an explicit `--dest-folder` and imports it using the same init placement. |
 | Prompt JSON ignored extra nodes | `manual:case-3` | Case 3 injects an unmatched prompt node and validates the warning. |
 | Prompt JSON ignored extra answers | `manual:case-3` | Case 3 injects an unused answer on a matched node and validates the warning. |
-| Prompt JSON on `update` | `automated-only` | The CLI intentionally rejects removed prompt JSON flags on update, and focused parser tests already cover that contract. |
+| Prompt JSON on `update` | `manual:case-3` | Case 3 exercises update prompt export and import against a tracked project using the same project context. |
 | `update` top-level command | `manual:case-4` | Case 4 uses the documented top-level update entrypoint. |
 | `update --update-missing` | `manual:case-4` | Case 4 restores a deleted non-readonly file with this mode. |
 | `update --update-full` | `manual:case-4` | Case 4 overwrites a drifted non-readonly file with this mode. |
@@ -102,7 +102,7 @@ The matrix below accounts for the current visible CLI surface from [docs/command
 
 - Run [manual-tests/case-1.md](manual-tests/case-1.md) first when you need a quick confidence pass on config and source resolution.
 - Run [manual-tests/case-2.md](manual-tests/case-2.md) when changing prompt logic, hidden behavior, or template-command safety behavior.
-- Run [manual-tests/case-3.md](manual-tests/case-3.md) when changing prompt JSON export, import, sibling discovery, or node identity behavior.
+- Run [manual-tests/case-3.md](manual-tests/case-3.md) when changing prompt JSON export, import, sibling discovery, node identity behavior, or init placement and update context rules.
 - Run [manual-tests/case-4.md](manual-tests/case-4.md) when changing update or verify walkers.
 
 ## Public-Safety Rules

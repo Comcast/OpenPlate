@@ -174,6 +174,62 @@ require_sibling_templates:
     assert "condition" not in sibling_node["info"]
 
 
+def test_project_print_init_json_verbose_uses_chosen_dest_folder_context(tmp_path, capsys):
+    repo_path = tmp_path / "template"
+    source_url = _write_template_repo(
+        repo_path,
+        """
+parameters:
+  - name: echoed_dest
+    description: Echoed Dest
+    default: "{{ dest_folder }}"
+""",
+    )
+    project_path = tmp_path / "project"
+    project_path.mkdir()
+
+    args = [
+        "openplate",
+        "-c",
+        str(tmp_path / "missing-config.yaml"),
+        "project",
+        "--project-root",
+        str(project_path),
+        "print-init-json",
+        source_url,
+        "--dest-folder",
+        "generated/app",
+        "--verbose",
+    ]
+
+    asyncio.run(async_main(args))
+
+    printed = json.loads(capsys.readouterr().out)
+    assert printed == [
+        {
+            "node-id": _node_id(source_url, "generated/app"),
+            "answers": {
+                "echoed_dest": None,
+            },
+            "info": {
+                "template": source_url,
+                "dest_folder": "generated/app",
+                "parameters": {
+                    "echoed_dest": {
+                        "default": "generated/app",
+                        "existing": None,
+                        "description": "Echoed Dest",
+                        "choices": None,
+                        "hidden": None,
+                        "required": False,
+                    }
+                },
+                "require_sibling_templates": [],
+            },
+        }
+    ]
+
+
 def test_project_print_init_json_deduplicates_duplicate_discovered_templates(tmp_path, capsys):
     repo_path = tmp_path / "template"
     source_url = _write_template_repo(
@@ -348,6 +404,99 @@ require_sibling_templates:
     assert enter_count == 1
 
 
+def test_project_print_update_json_includes_hidden_parameters_and_current_values(tmp_path, capsys):
+    repo_path = tmp_path / "template"
+    source_url = _write_template_repo(
+        repo_path,
+        """
+parameters:
+  - name: service_name
+    description: Service Name
+    default: default-name
+  - name: hidden_name
+    description: Hidden Name
+    default: secret
+    hidden: true
+""",
+    )
+    project_path = tmp_path / "project"
+    project_path.mkdir()
+    project_config_path = project_path / project_config.project_config_file_name
+    project_config_path.write_text(
+        yaml.safe_dump(
+            {
+                "templates": [
+                    {
+                        "src_url": source_url,
+                        "dest_folder": "services/api",
+                        "parameters": {
+                            "service_name": "existing-name",
+                        },
+                        "template_ignore_paths": [],
+                        "no_cache": False,
+                    }
+                ]
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    args = [
+        "openplate",
+        "-c",
+        str(tmp_path / "missing-config.yaml"),
+        "project",
+        "--project-root",
+        str(project_path),
+        "print-update-json",
+    ]
+
+    asyncio.run(async_main(args))
+
+    printed = json.loads(capsys.readouterr().out)
+    assert printed == [
+        {
+            "node-id": _node_id(source_url, "services/api"),
+            "answers": {
+                "service_name": {
+                    "supplied": False,
+                    "value": None,
+                },
+                "hidden_name": {
+                    "supplied": False,
+                    "value": None,
+                },
+            },
+            "info": {
+                "template": source_url,
+                "dest_folder": "services/api",
+                "parameters": {
+                    "service_name": {
+                        "current": "existing-name",
+                        "default": "default-name",
+                        "existing": "existing-name",
+                        "description": "Service Name",
+                        "choices": None,
+                        "hidden": None,
+                        "required": False,
+                    },
+                    "hidden_name": {
+                        "current": "secret",
+                        "default": "secret",
+                        "existing": None,
+                        "description": "Hidden Name",
+                        "choices": None,
+                        "hidden": True,
+                        "required": False,
+                    },
+                },
+                "require_sibling_templates": [],
+            },
+        }
+    ]
+
+
 def test_project_init_accepts_prompts_json_file_with_node_ids(tmp_path):
     repo_path = tmp_path / "template"
     source_url = _write_template_repo(
@@ -394,6 +543,57 @@ parameters:
 
     written_config = yaml.safe_load((project_path / project_config.project_config_file_name).read_text(encoding="utf-8"))
     assert written_config["templates"][0]["parameters"]["service_name"] == "demo"
+
+
+def test_project_init_json_mode_requires_matching_dest_folder_context(tmp_path, caplog):
+    repo_path = tmp_path / "template"
+    source_url = _write_template_repo(
+        repo_path,
+        """
+parameters:
+  - name: echoed_dest
+    description: Echoed Dest
+    default: "{{ dest_folder }}"
+""",
+    )
+    project_path = tmp_path / "project"
+    project_path.mkdir()
+    prompts_path = tmp_path / "prompts.json"
+    prompts_path.write_text(
+        json.dumps(
+            [
+                {
+                    "node-id": _node_id(source_url, "generated/app"),
+                    "answers": {
+                        "echoed_dest": None,
+                    },
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    args = [
+        "openplate",
+        "-c",
+        str(tmp_path / "missing-config.yaml"),
+        "project",
+        "--project-root",
+        str(project_path),
+        "init",
+        source_url,
+        "--dest-folder",
+        "services/api",
+        "--prompts-json-file",
+        str(prompts_path),
+    ]
+
+    with caplog.at_level(logging.WARNING):
+        asyncio.run(async_main(args))
+
+    written_config = yaml.safe_load((project_path / project_config.project_config_file_name).read_text(encoding="utf-8"))
+    assert written_config["templates"][0]["parameters"]["echoed_dest"] == "services/api"
+    assert any("Ignoring supplied prompt template because it was not processed" in record.message for record in caplog.records)
 
 
 def test_project_init_with_prompt_json_rejects_requiring_last_updater_email_without_allow(tmp_path, monkeypatch):
@@ -520,6 +720,291 @@ parameters:
 
     written_config = yaml.safe_load((project_path / project_config.project_config_file_name).read_text(encoding="utf-8"))
     assert written_config["templates"][0]["parameters"]["service_name"] == ""
+
+
+def test_project_update_json_mode_rejects_invalid_structured_answer_shape(tmp_path):
+    repo_path = tmp_path / "template"
+    source_url = _write_template_repo(
+        repo_path,
+        """
+parameters:
+  - name: service_name
+    description: Service Name
+    default: demo
+""",
+    )
+    project_path = tmp_path / "project"
+    project_path.mkdir()
+    (project_path / project_config.project_config_file_name).write_text(
+        yaml.safe_dump(
+            {
+                "templates": [
+                    {
+                        "src_url": source_url,
+                        "dest_folder": ".",
+                        "parameters": {},
+                        "template_ignore_paths": [],
+                        "no_cache": False,
+                    }
+                ]
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    prompts_path = tmp_path / "prompts.json"
+    prompts_path.write_text(
+        json.dumps(
+            [
+                {
+                    "node-id": _node_id(source_url, "."),
+                    "answers": {
+                        "service_name": {
+                            "supplied": False,
+                            "value": "demo",
+                        }
+                    },
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    args = [
+        "openplate",
+        "-c",
+        str(tmp_path / "missing-config.yaml"),
+        "project",
+        "--project-root",
+        str(project_path),
+        "update",
+        "--prompts-json-file",
+        str(prompts_path),
+    ]
+
+    with pytest.raises(ValueError, match="supplied=false"):
+        asyncio.run(async_main(args))
+
+
+def test_project_update_json_mode_uses_supplied_value_and_hidden_without_ask_hidden(tmp_path, monkeypatch):
+    repo_path = tmp_path / "template"
+    source_url = _write_template_repo(
+        repo_path,
+        """
+parameters:
+  - name: service_name
+    description: Service Name
+    default: default-name
+  - name: hidden_name
+    description: Hidden Name
+    default: secret
+    hidden: true
+""",
+    )
+    project_path = tmp_path / "project"
+    project_path.mkdir()
+    (project_path / project_config.project_config_file_name).write_text(
+        yaml.safe_dump(
+            {
+                "templates": [
+                    {
+                        "src_url": source_url,
+                        "dest_folder": ".",
+                        "parameters": {
+                            "service_name": "old-name",
+                        },
+                        "template_ignore_paths": [],
+                        "no_cache": False,
+                    }
+                ]
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    prompts_path = tmp_path / "prompts.json"
+    prompts_path.write_text(
+        json.dumps(
+            [
+                {
+                    "node-id": _node_id(source_url, "."),
+                    "answers": {
+                        "service_name": {
+                            "supplied": True,
+                            "value": "new-name",
+                        },
+                        "hidden_name": {
+                            "supplied": True,
+                            "value": "override-secret",
+                        },
+                    },
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    async def fake_walk_update(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr("openplate.walk.source_template_recursive_walk.walk_update", fake_walk_update)
+
+    args = [
+        "openplate",
+        "-c",
+        str(tmp_path / "missing-config.yaml"),
+        "project",
+        "--project-root",
+        str(project_path),
+        "update",
+        "--prompts-json-file",
+        str(prompts_path),
+    ]
+
+    asyncio.run(async_main(args))
+
+    written_config = yaml.safe_load((project_path / project_config.project_config_file_name).read_text(encoding="utf-8"))
+    assert written_config["templates"][0]["parameters"]["service_name"] == "new-name"
+    assert written_config["templates"][0]["parameters"]["hidden_name"] == "override-secret"
+
+
+def test_project_update_json_mode_clears_existing_override_and_keeps_default_unpersisted(tmp_path, monkeypatch):
+    repo_path = tmp_path / "template"
+    source_url = _write_template_repo(
+        repo_path,
+        """
+parameters:
+  - name: service_name
+    description: Service Name
+    default: default-name
+""",
+    )
+    project_path = tmp_path / "project"
+    project_path.mkdir()
+    (project_path / project_config.project_config_file_name).write_text(
+        yaml.safe_dump(
+            {
+                "templates": [
+                    {
+                        "src_url": source_url,
+                        "dest_folder": ".",
+                        "parameters": {
+                            "service_name": "old-name",
+                        },
+                        "template_ignore_paths": [],
+                        "no_cache": False,
+                    }
+                ]
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    prompts_path = tmp_path / "prompts.json"
+    prompts_path.write_text(
+        json.dumps(
+            [
+                {
+                    "node-id": _node_id(source_url, "."),
+                    "answers": {
+                        "service_name": {
+                            "supplied": True,
+                            "value": None,
+                        }
+                    },
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    async def fake_walk_update(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr("openplate.walk.source_template_recursive_walk.walk_update", fake_walk_update)
+
+    args = [
+        "openplate",
+        "-c",
+        str(tmp_path / "missing-config.yaml"),
+        "project",
+        "--project-root",
+        str(project_path),
+        "update",
+        "--prompts-json-file",
+        str(prompts_path),
+    ]
+
+    asyncio.run(async_main(args))
+
+    written_config = yaml.safe_load((project_path / project_config.project_config_file_name).read_text(encoding="utf-8"))
+    assert "service_name" not in written_config["templates"][0]["parameters"]
+
+
+def test_project_update_json_mode_rejects_invalid_choice_value(tmp_path):
+    repo_path = tmp_path / "template"
+    source_url = _write_template_repo(
+        repo_path,
+        """
+parameters:
+  - name: flavor
+    description: Flavor
+    choices:
+      - vanilla
+      - chocolate
+""",
+    )
+    project_path = tmp_path / "project"
+    project_path.mkdir()
+    (project_path / project_config.project_config_file_name).write_text(
+        yaml.safe_dump(
+            {
+                "templates": [
+                    {
+                        "src_url": source_url,
+                        "dest_folder": ".",
+                        "parameters": {},
+                        "template_ignore_paths": [],
+                        "no_cache": False,
+                    }
+                ]
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    prompts_path = tmp_path / "prompts.json"
+    prompts_path.write_text(
+        json.dumps(
+            [
+                {
+                    "node-id": _node_id(source_url, "."),
+                    "answers": {
+                        "flavor": {
+                            "supplied": True,
+                            "value": "strawberry",
+                        }
+                    },
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    args = [
+        "openplate",
+        "-c",
+        str(tmp_path / "missing-config.yaml"),
+        "project",
+        "--project-root",
+        str(project_path),
+        "update",
+        "--prompts-json-file",
+        str(prompts_path),
+    ]
+
+    with pytest.raises(ValueError, match="must be one of"):
+        asyncio.run(async_main(args))
 
 
 def test_project_init_ignores_info_metadata_on_import(tmp_path):
