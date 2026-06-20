@@ -1,8 +1,5 @@
-# top-level-init-update-commands Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change add-top-level-init-update-commands. Update Purpose after archive.
-## Requirements
 ### Requirement: Top-level init is the primary initialization command
 OpenPlate SHALL provide `openplate init` as a first-class top-level command for project initialization. `openplate init` MUST expose the init options and shared project-runtime options required to perform the same initialization workflow currently handled by the project init runtime path.
 
@@ -48,17 +45,6 @@ OpenPlate SHALL continue to accept `openplate project init` and `openplate proje
 - **WHEN** a user runs `openplate project update --project-root ./workspace --update-full`
 - **THEN** OpenPlate accepts the renamed shared root-selection option on the legacy command form
 
-### Requirement: Top-level help advertises only the new primary commands
-OpenPlate top-level help SHALL advertise `init`, `update`, and `verify` as the supported project workflow commands. The legacy `project` command MUST remain functional but MUST NOT appear in top-level help output.
-
-#### Scenario: Top-level help shows init, update, and verify
-- **WHEN** a user runs `openplate --help`
-- **THEN** the help output lists `init`, `update`, and `verify` as available commands
-
-#### Scenario: Top-level help hides project compatibility command
-- **WHEN** a user runs `openplate --help`
-- **THEN** the help output does not list `project` as an available top-level command
-
 ### Requirement: Documentation presents top-level init and update as the supported syntax
 OpenPlate documentation SHALL show `openplate init` and `openplate update` in command examples and primary usage guidance. Documentation MAY mention `openplate project init` and `openplate project update` only as backward-compatible legacy forms.
 
@@ -72,25 +58,7 @@ Documentation SHALL use `--project-root` when showing the shared root-selection 
 - **WHEN** a user reads the shared project-runtime option documentation
 - **THEN** the documentation uses `--project-root` rather than `--project-folder`
 
-### Requirement: Top-level verify is the primary verification command
-OpenPlate SHALL provide `openplate verify` as a first-class top-level command for project verification. `openplate verify` MUST expose the shared project-runtime options required to perform the same verification workflow currently handled by the existing project verify execution path.
-
-#### Scenario: Top-level verify parses successfully
-- **WHEN** a user runs `openplate verify`
-- **THEN** OpenPlate parses the command successfully
-- **THEN** OpenPlate routes the invocation through the existing project-verify execution flow
-
-#### Scenario: Top-level verify accepts shared project root option
-- **WHEN** a user runs `openplate verify --project-root ./workspace`
-- **THEN** OpenPlate accepts the shared project-runtime options on the top-level verify command
-
-### Requirement: Legacy project verify command remains supported
-OpenPlate SHALL continue to accept `openplate project verify` as a backward-compatible command form. The legacy command MUST preserve the behavior and option set of `openplate verify`.
-
-#### Scenario: Legacy project verify remains valid
-- **WHEN** a user runs `openplate project verify --project-root ./workspace`
-- **THEN** OpenPlate parses the command successfully
-- **THEN** OpenPlate performs the same verification behavior as `openplate verify --project-root ./workspace`
+## ADDED Requirements
 
 ### Requirement: Legacy project-folder option is rejected with migration guidance
 OpenPlate SHALL reject `--project-folder` on top-level and legacy init, update, and verify command paths. The rejection message MUST tell the user to use `--project-root` instead.
@@ -109,4 +77,3 @@ OpenPlate SHALL reject `--project-folder` on top-level and legacy init, update, 
 - **WHEN** a user runs `openplate project verify --project-folder ./workspace`
 - **THEN** OpenPlate rejects the command
  - **THEN** the error message tells the user to use `--project-root`
-
