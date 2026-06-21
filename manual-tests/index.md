@@ -16,13 +16,14 @@ This folder is the repo-owned source of truth for end-to-end manual execution of
 - Clean one case: `bash ./manual-tests/cleanup-manual-tests.sh case-1`
 - Clean all generated state: `bash ./manual-tests/cleanup-manual-tests.sh all`
 
-The bash runner materializes local git-backed template repositories from the checked-in fixture directories, then executes OpenPlate only against local `file://` sources. No case depends on network access or private infrastructure.
+The bash runner materializes local git-backed template repositories from the checked-in fixture directories inside a temporary repo-shaped sandbox, then executes OpenPlate only against local `file://` sources. It mirrors generated work and artifact outputs back into the checked-in gitignored `manual-tests/work` and `manual-tests/artifacts` folders for inspection without copying nested `.git` directories into the live checkout. No case depends on network access or private infrastructure.
 
 ## Workspace Conventions
 
 - Checked-in fixture inputs live under [manual-tests/templates](manual-tests/templates).
-- Generated local git repos, initialized projects, and mutated workspaces live under [manual-tests/work/<case-id>](manual-tests/work).
-- Captured logs, prompt JSON files, and per-case summaries live under [manual-tests/artifacts/<case-id>](manual-tests/artifacts).
+- Repo-mutating setup runs inside a temporary sandbox created by the runner for that invocation.
+- Generated local git repos and mutated workspaces are created in that temporary sandbox, then mirrored back under [manual-tests/work/<case-id>](manual-tests/work) for inspection without nested `.git` directories.
+- Captured logs, prompt JSON files, and per-case summaries are generated in the temporary sandbox and mirrored back under [manual-tests/artifacts/<case-id>](manual-tests/artifacts).
 - Each case is independent. The runner bootstraps a fresh local catalog repo per case.
 
 ## Case Inventory
@@ -109,4 +110,5 @@ The matrix below accounts for the current visible CLI surface from [docs/command
 
 - Do not replace the checked-in fixtures with internal or company-specific templates.
 - Do not point the runner at external repositories for baseline execution.
+- Do not bypass the runner's temporary sandbox when a workflow needs to change repo-local git identity, branch state, or commit history.
 - Keep fixture names, placeholder values, and generated summaries generic.
