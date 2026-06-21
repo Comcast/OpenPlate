@@ -58,6 +58,26 @@ ex:
 
 Built-in template variables, Git URL variants, runtime-only metadata rules, and deprecated compatibility aliases are documented in [docs/template-parameters.md](template-parameters.md).
 
+### Liquid Availability At A Glance
+
+`imports` is not a global variable. It is a runtime object that becomes available only after sibling resolution for the current template instance.
+
+| Template Surface | Built-in Values | Earlier Parameter Answers | `config_files` | `imports` |
+| --- | --- | --- | --- | --- |
+| Parameter `default` | Yes | No | No | No |
+| `conditionally_hidden` | Yes | Yes | No | No |
+| Sibling declarations (`template_url`, `dest_folder`, `parameters`, `condition`) | Yes | Yes | Yes | No |
+| `config_files` | Yes | Yes | Existing `config_files` only | Yes, but only after sibling resolution |
+| Prompt JSON export | Yes | Yes | Yes | No |
+| Replacement files, rename rules, conditional files, multiplex, remove_files, init_commands | Yes | Yes | Yes | Yes |
+| Export `key`, `value`, and `location` | Yes | Yes | Yes | Yes |
+
+Notes:
+
+- Only earlier parameters are guaranteed in `conditionally_hidden` because parameters are resolved in declaration order.
+- `imports` comes only from required siblings, including recursive sibling trees.
+- A template cannot use its own exports while it is still running. Exports are registered after the template instance finishes processing at its location.
+
 ### Default
 
 Parameters can have a default value:
@@ -280,6 +300,8 @@ If configuration is needed from the project, the following may be done:
 
 - In the template, you can reference the liquid values such as: ```{{my_settings.setting1}} and {{my_settings.setting2.setting2A}}```
 
+If a value must come from another template instance instead of a file, prefer `imports` and `exports` below. `config_files` remains useful for project-owned configuration documents, but it is no longer the only way to move structured data between related templates.
+
 ## Minimum Openplate version:  (v0.0.15)
 
 To specify that the template requires a specific openplate version or higher:
@@ -327,6 +349,77 @@ require_sibling_templates:
   - "true", "1", or "yes" -> Included
   - "false", "0", "no" -> Excluded
 - This check is case-insensitive, so "Yes" also qualifies as "yes".
+
+## Template Exports
+
+Templates can publish values for sibling templates to import later in the same command.
+
+```yaml
+exports:
+  - key: "worker-name"
+    value: "{{ worker_project_name }}"
+  - key: "deployable-projects"
+    value: "{{ dest_folder }}:dotnet10-api"
+    location: "."
+    shared-export: true
+```
+
+Rules:
+
+- `key` is required and supports liquid rendering.
+- `value` is required and supports liquid rendering.
+- `location` is optional, supports liquid rendering, and defaults to the current template instance's rendered `dest_folder`.
+- `shared-export` is optional and defaults to `false`.
+- Exports are scoped by rendered `(location, key)`.
+- Exports are registered only after the current template instance finishes processing at that location, including post-sibling rendering and init commands.
+- Export values use the post-sibling liquid context, so they can reference `imports`, `config_files`, built-in values, and resolved parameters.
+- Exports are not available to the template instance that declares them because they are created after that template finishes running.
+
+Collision behavior:
+
+- A non-shared export must be unique for its rendered `(location, key)`.
+- Shared exports append values into a list for that rendered `(location, key)`.
+- Mixing shared and non-shared exports for the same rendered `(location, key)` fails.
+
+## Template Imports
+
+Templates can import values only from required siblings, including recursive sibling trees.
+
+```yaml
+imports:
+  - export-key: "worker-name"
+    location: "workers/common"
+    import-key: "worker_name"
+  - export-key: "deployable-projects"
+    location: "."
+    import-key: "deployable_projects"
+```
+
+Rules:
+
+- `export-key` is required and supports liquid rendering.
+- `import-key` is required and supports liquid rendering.
+- `location` is optional, supports liquid rendering, and defaults to the current template instance's rendered `dest_folder`.
+- Imported values are exposed as `imports.<import-key>`.
+- Imported non-shared exports resolve to strings.
+- Imported shared exports resolve to liquid lists.
+- If no visible sibling export matches the rendered `(location, export-key)`, OpenPlate fails with an unresolved import error.
+- Imports are filtered to the current template instance's required siblings and those siblings' recursive sibling trees. An unrelated template that ran earlier does not satisfy the import.
+
+Example use in a replacement file:
+
+```liquid
+Worker: {{ imports.worker_name }}
+Deployables: {{ imports.deployable_projects | join: ", " }}
+```
+
+Scope rules:
+
+- `imports` is available only after sibling resolution.
+- `imports` is not available in parameter defaults.
+- `imports` is not available in `conditionally_hidden`.
+- `imports` is not available in sibling declarations or sibling conditions.
+- `imports` is not available in prompt JSON export.
 
 ## Ignore Inherited Files (v0.0.17)
 
