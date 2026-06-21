@@ -2,6 +2,9 @@
 
 set -euo pipefail
 
+SCRIPT_DIR_FROM_BASH_SOURCE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR_FROM_BASH_SOURCE/manual-test-lib.sh"
+
 usage() {
   cat <<'EOF'
 Usage: ./manual-tests/run-manual-tests.sh [case-1|case-2|case-3|case-4|all]
@@ -42,11 +45,19 @@ case "$CASE" in
     ;;
 esac
 
-SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_ROOT="$SCRIPT_DIR_FROM_BASH_SOURCE"
 REPO_ROOT="$(cd "$SCRIPT_ROOT/.." && pwd)"
+SOURCE_REPO_ROOT="${OPENPLATE_MANUAL_SOURCE_REPO_ROOT:-$REPO_ROOT}"
 TEMPLATES_ROOT="$SCRIPT_ROOT/templates"
 WORK_ROOT="$SCRIPT_ROOT/work"
 ARTIFACTS_ROOT="$SCRIPT_ROOT/artifacts"
+SOURCE_MANUAL_TESTS_ROOT="$SOURCE_REPO_ROOT/manual-tests"
+SANDBOX_RECORD_PATH="$SOURCE_MANUAL_TESTS_ROOT/artifacts/.sandbox-root"
+
+if [[ ! -f "$SOURCE_REPO_ROOT/pyproject.toml" ]] || [[ ! -f "$SOURCE_REPO_ROOT/src/openplate/__main__.py" ]]; then
+  echo "Manual-test source repo root is invalid: $SOURCE_REPO_ROOT" >&2
+  exit 1
+fi
 
 ensure_dir() {
   mkdir -p "$1"
@@ -85,7 +96,98 @@ python_path_arg() {
 }
 
 python_module_search_path() {
-  python_path_arg "$REPO_ROOT/src"
+  python_path_arg "$SOURCE_REPO_ROOT/src"
+}
+
+normalize_line_endings() {
+  local path="$1"
+  "$PYTHON_EXE" - "$(python_path_arg "$path")" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+path.write_text(path.read_text(encoding="utf-8").replace("\r\n", "\n"), encoding="utf-8", newline="\n")
+PY
+}
+
+create_temp_sandbox_root() {
+  "$PYTHON_EXE" - <<'PY' | tr -d '\r'
+import tempfile
+from pathlib import Path
+
+path = Path(tempfile.mkdtemp(prefix="openplate-manual-root-")).resolve().as_posix()
+if len(path) > 2 and path[1] == ':':
+    print('/mnt/' + path[0].lower() + path[2:])
+else:
+    print(path)
+PY
+}
+
+record_sandbox_root() {
+  local sandbox_root="$1"
+  ensure_dir "$(dirname "$SANDBOX_RECORD_PATH")"
+  printf '%s\n' "$sandbox_root" > "$SANDBOX_RECORD_PATH"
+}
+
+bootstrap_sandbox_if_needed() {
+  if [[ "${OPENPLATE_MANUAL_SANDBOX_ACTIVE:-0}" == "1" ]]; then
+    return
+  fi
+
+  local sandbox_root sandbox_manual_tests
+  sandbox_root="$(create_temp_sandbox_root)"
+  sandbox_manual_tests="$sandbox_root/manual-tests"
+  cp -R "$SCRIPT_ROOT" "$sandbox_manual_tests"
+  normalize_line_endings "$sandbox_manual_tests/run-manual-tests.sh"
+  normalize_line_endings "$sandbox_manual_tests/cleanup-manual-tests.sh"
+  record_sandbox_root "$sandbox_root"
+  printf 'Using manual-test sandbox: %s\n' "$sandbox_root"
+  OPENPLATE_MANUAL_SOURCE_REPO_ROOT="$SOURCE_REPO_ROOT" \
+    OPENPLATE_MANUAL_SANDBOX_ACTIVE=1 \
+    exec bash "$sandbox_manual_tests/run-manual-tests.sh" "$CASE"
+}
+
+sync_directory_without_git() {
+  local source_dir="$1"
+  local dest_dir="$2"
+  "$PYTHON_EXE" - "$(python_path_arg "$source_dir")" "$(python_path_arg "$dest_dir")" <<'PY'
+from pathlib import Path
+import os
+import shutil
+import stat
+import sys
+
+source = Path(sys.argv[1])
+dest = Path(sys.argv[2])
+
+
+def on_rm_error(func, path, exc_info):
+  os.chmod(path, stat.S_IWRITE)
+  func(path)
+
+
+if dest.exists():
+  shutil.rmtree(dest, onexc=on_rm_error)
+if not source.exists():
+    raise SystemExit(0)
+
+def ignore_git(_path, names):
+    return {'.git'} if '.git' in names else set()
+
+shutil.copytree(source, dest, ignore=ignore_git)
+PY
+}
+
+sync_case_outputs_to_source() {
+  local case_id="$1"
+  if [[ "$SOURCE_REPO_ROOT" == "$REPO_ROOT" ]]; then
+    return
+  fi
+
+  ensure_dir "$SOURCE_MANUAL_TESTS_ROOT/work"
+  ensure_dir "$SOURCE_MANUAL_TESTS_ROOT/artifacts"
+  sync_directory_without_git "$WORK_ROOT/$case_id" "$SOURCE_MANUAL_TESTS_ROOT/work/$case_id"
+  sync_directory_without_git "$ARTIFACTS_ROOT/$case_id" "$SOURCE_MANUAL_TESTS_ROOT/artifacts/$case_id"
 }
 
 file_url() {
@@ -128,7 +230,7 @@ invoke_openplate_in_dir() {
   local exit_code
   local source_root
 
-  source_root="$(python_path_arg "$REPO_ROOT/src")"
+  source_root="$(python_module_search_path)"
 
   if [[ -n "$stdin_payload" ]]; then
     stdin_file="$artifact_dir/${log_name}.stdin"
@@ -213,20 +315,20 @@ reset_case_folders() {
 initialize_git_repo() {
   local repo_path="$1"
   local remote_url="${2:-}"
+  assert_safe_git_repo_target "$repo_path" "$WORK_ROOT" "$SOURCE_REPO_ROOT"
   (
-    cd "$repo_path"
-    git init >/dev/null 2>&1
-    git branch -M main >/dev/null 2>&1
-    git config user.email 'manual-tests@example.com'
-    git config user.name 'OpenPlate Manual Tests'
-    if ! find . -mindepth 1 -maxdepth 1 ! -name '.git' | grep -q .; then
-      printf 'manual test repo\n' > .manual-git-root
+    git -C "$repo_path" init >/dev/null 2>&1
+    git -C "$repo_path" branch -M main >/dev/null 2>&1
+    git -C "$repo_path" config user.email 'manual-tests@example.com'
+    git -C "$repo_path" config user.name 'OpenPlate Manual Tests'
+    if ! find "$repo_path" -mindepth 1 -maxdepth 1 ! -name '.git' | grep -q .; then
+      printf 'manual test repo\n' > "$repo_path/.manual-git-root"
     fi
     if [[ -n "$remote_url" ]]; then
-      git remote add origin "$remote_url" >/dev/null 2>&1
+      git -C "$repo_path" remote add origin "$remote_url" >/dev/null 2>&1
     fi
-    git add .
-    git commit -m 'fixture init' >/dev/null 2>&1
+    git -C "$repo_path" add .
+    git -C "$repo_path" commit -m 'fixture init' >/dev/null 2>&1
   )
 }
 
@@ -779,6 +881,8 @@ run_case4() {
     'Validated update, --update-missing, --update-full, --ask-again, top-level verify in human mode, and top-level verify with --automation output.'
 }
 
+bootstrap_sandbox_if_needed
+
 ensure_dir "$WORK_ROOT"
 ensure_dir "$ARTIFACTS_ROOT"
 
@@ -795,6 +899,7 @@ for case_id in "${cases_to_run[@]}"; do
     case-3) run_case3 ;;
     case-4) run_case4 ;;
   esac
+  sync_case_outputs_to_source "$case_id"
 done
 
 printf 'Manual test run complete for: %s\n' "$(IFS=', '; echo "${cases_to_run[*]}")"
