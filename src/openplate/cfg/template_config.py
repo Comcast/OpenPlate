@@ -108,6 +108,61 @@ class ConditionalFile:
         self.condition = condition
 
 
+class TemplateImport:
+    def __init__(
+        self,
+        export_key: str,
+        import_key: str,
+        location: Optional[str] = None,
+    ):
+        if export_key is None:
+            raise ValueError("export_key cannot be None")
+        if import_key is None:
+            raise ValueError("import_key cannot be None")
+
+        normalized_export_key = str(export_key).strip()
+        normalized_import_key = str(import_key).strip()
+        if not normalized_export_key:
+            raise ValueError("export_key cannot be blank")
+        if not normalized_import_key:
+            raise ValueError("import_key cannot be blank")
+
+        self.export_key = normalized_export_key
+        self.import_key = normalized_import_key
+
+        normalized_location = None
+        if location is not None and str(location).strip():
+            normalized_location = str(location).strip()
+        self.location = normalized_location
+
+
+class TemplateExport:
+    def __init__(
+        self,
+        key: str,
+        value: str,
+        location: Optional[str] = None,
+        shared_export: bool = False,
+    ):
+        if key is None:
+            raise ValueError("key cannot be None")
+        if value is None:
+            raise ValueError("value cannot be None")
+
+        normalized_key = str(key).strip()
+        if not normalized_key:
+            raise ValueError("key cannot be blank")
+
+        self.key = normalized_key
+        self.value = str(value)
+
+        normalized_location = None
+        if location is not None and str(location).strip():
+            normalized_location = str(location).strip()
+        self.location = normalized_location
+        self.shared_export = bool(shared_export)
+
+
 class IgnoreInheritedFilesType(Enum):
     NONE = 0
     ALL = 1
@@ -142,8 +197,10 @@ class TemplateConfig:
             init_commands: Optional[list[InitCommand]],
             default_dest_folder: Optional[str],
             multiplex: Optional[list[MultiplexFile]],
-                conditional: Optional[list[ConditionalFile]],
-                requires_last_updater_email: bool = False,
+            conditional: Optional[list[ConditionalFile]],
+            requires_last_updater_email: bool = False,
+            imports: Optional[list[TemplateImport]] = None,
+            exports: Optional[list[TemplateExport]] = None,
     ):
         if parameters is None:
             raise TypeError
@@ -168,6 +225,8 @@ class TemplateConfig:
         self.multiplex = multiplex
         self.conditional = conditional
         self.requires_last_updater_email = requires_last_updater_email
+        self.imports = imports or []
+        self.exports = exports or []
 
         self.default_dest_folder = None
         if default_dest_folder and default_dest_folder.strip():
@@ -211,6 +270,8 @@ def from_file(file_name: str) -> Optional[TemplateConfig]:
             [],
             [],
             False,
+            [],
+            [],
         )
     return deserialize_project_config(data)
 
@@ -246,6 +307,8 @@ def deserialize_project_config(data):
         deserialize_multiplex_list(data.get("multiplex")),
         deserialize_conditional_list(data.get("conditional")),
         deserialize_optional_bool(data.get("requires_last_updater_email"), "requires_last_updater_email") or False,
+        deserialize_import_list(data.get("imports")),
+        deserialize_export_list(data.get("exports")),
     )
 
 
@@ -307,6 +370,48 @@ def deserialize_require_sibling_template(data):
             )
     return sibling_templates
 
+
+def deserialize_import_list(data):
+    imports = []
+
+    if data is not None:
+        if not isinstance(data, list):
+            raise TypeError("imports in template configuration is not a list")
+
+        for entry in data:
+            imports.append(
+                TemplateImport(
+                    required_string(entry, "export-key", "imports"),
+                    required_string(entry, "import-key", "imports"),
+                    optional_string(entry, "location"),
+                )
+            )
+
+    return imports
+
+
+def deserialize_export_list(data):
+    exports = []
+
+    if data is not None:
+        if not isinstance(data, list):
+            raise TypeError("exports in template configuration is not a list")
+
+        for entry in data:
+            exports.append(
+                TemplateExport(
+                    required_string(entry, "key", "exports"),
+                    required_string(entry, "value", "exports"),
+                    optional_string(entry, "location"),
+                    deserialize_optional_bool(
+                        entry.get("shared-export", entry.get("shared_export")),
+                        "shared-export"
+                    ) or False,
+                )
+            )
+
+    return exports
+
 def deserialize_conditional_list(data):
     conditional = []
 
@@ -349,5 +454,32 @@ def deserialize_init_commands(data) -> list[InitCommand]:
             init_commands.append(InitCommand(command, folder))
 
     return init_commands if len(init_commands) > 0 else None
+
+
+def required_string(data, field_name: str, section_name: str) -> str:
+    if not isinstance(data, dict):
+        raise TypeError(section_name + " entry in template configuration is not an object")
+
+    value = data.get(field_name)
+    if value is None:
+        raise ValueError(f"{field_name} is required in {section_name} entry")
+
+    normalized_value = str(value).strip()
+    if not normalized_value:
+        raise ValueError(f"{field_name} in {section_name} entry cannot be blank")
+
+    return normalized_value
+
+
+def optional_string(data, field_name: str) -> Optional[str]:
+    if not isinstance(data, dict):
+        raise TypeError("template configuration entry is not an object")
+
+    value = data.get(field_name)
+    if value is None:
+        return None
+
+    normalized_value = str(value).strip()
+    return normalized_value or None
 
 template_config_file_name = "openplate.template.yaml"

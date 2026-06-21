@@ -8,6 +8,7 @@ This document is the reference for OpenPlate's built-in template variables.
 - Project metadata that depends on the current filesystem root or current Git remote is derived at runtime and is not persisted in `.openplate.project.yaml`.
 - When an HTTPS Git URL includes embedded credentials, OpenPlate strips the userinfo before exposing any runtime URL variable.
 - Template Git variables are populated only when the current template source is a Git URL. For non-Git sources such as `file://...`, the `template_git_*` variables are empty.
+- `imports` is a separate runtime object, not a built-in variable. It is available only in post-sibling rendering; see [docs/templates.md](templates.md) for the authoring matrix and import/export rules.
 
 ## Project Root And Path Variables
 
