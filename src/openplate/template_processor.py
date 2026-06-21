@@ -36,7 +36,8 @@ def compile_template_options(
         config_project_template: ProjectTemplateConfig,
         source_folder: str,
         destination_folder: str,
-        ignore_tool_version: bool
+    ignore_tool_version: bool,
+    imports: Optional[dict[str, object]] = None,
 ) -> dict[str, object]:
 
     if not ignore_tool_version:
@@ -85,6 +86,9 @@ def compile_template_options(
     options["template_git_repo_ref"] = getattr(config_project_template, "template_git_repo_ref", "") or ""
     options["template_version"] = config_project_template.version or ""
 
+    if imports is not None:
+        options["imports"] = imports
+
     for (config_file_key, config_file_location) in config_template.config_files.items():
         # First render the config file name:
         rendered_config_file_location = process(
@@ -127,7 +131,7 @@ def compile_template_options(
 
 
 def process(
-        template_options: dict[str, str],
+    template_options: dict[str, object],
         template_string: str,
         paths: list[str],
         template_source: str = "UNKNOWN",
