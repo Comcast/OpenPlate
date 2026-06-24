@@ -23,6 +23,8 @@ from pathlib import Path
 
 import pytest
 
+from openplate import __semver__ as module_semver
+from openplate import __version__ as module_version
 from openplate.__main__ import async_main, create_arg_parser, load_prompt_document, resolve_project_init_source_reference
 from openplate.cfg import open_plate_settings
 from openplate.git import GitTemplateReference
@@ -107,6 +109,16 @@ def test_create_arg_parser_top_level_help_hides_project_command():
     assert "{config,init,update,verify,info}" in help_text
     assert "{config,init,update,verify,info,project}" not in help_text
     assert "==SUPPRESS==" not in help_text
+
+
+def test_create_arg_parser_accepts_version_without_command():
+    args = ["openplate", "--version"]
+    parser = create_arg_parser(args)
+
+    result = parser.parse_args(args[1:])
+
+    assert result.version is True
+    assert result.command is None
 
 
 def test_create_arg_parser_accepts_top_level_verify_with_shared_project_options():
@@ -239,6 +251,17 @@ def test_load_prompt_document_reads_json_from_stdin(monkeypatch):
 
     assert document is not None
     assert document.templates == []
+
+
+def test_async_main_prints_version_without_subcommand(capsys):
+    args = ["openplate", "--version"]
+
+    with pytest.raises(SystemExit) as exc_info:
+        asyncio.run(async_main(args))
+
+    assert exc_info.value.code == 0
+    expected = f"openplate v{module_semver}" if module_semver == module_version else f"openplate v{module_semver} (PyPI {module_version})"
+    assert capsys.readouterr().out.strip() == expected
 
 
 def test_create_arg_parser_rejects_removed_name_option():

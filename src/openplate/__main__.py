@@ -152,6 +152,7 @@ def hide_subparser_from_help(subparsers, command_name):
 
 def create_arg_parser(args):
     arg_parser = argparse.ArgumentParser()
+    arg_parser.set_defaults(command=None)
     arg_parser.add_argument("-c", "--config-file", type=str, required=False, help="Configuration file to use (yaml)")
     arg_parser.add_argument("-d", "--debug", required=False,
                             help="Debug mode is enabled or not", action=argparse.BooleanOptionalAction)
@@ -274,6 +275,13 @@ async def async_main(args):
     if result.debug:
         logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
 
+    if result.version:
+        if module_semver == module_version:
+            print(f"openplate v{module_semver}")
+        else:
+            print(f"openplate v{module_semver} (PyPI {module_version})")
+        exit(0)
+
     if result.command == "project-info":
         if getattr(result, "ask_again", False):
             raise ValueError("--ask-again is not supported for 'openplate info'")
@@ -282,13 +290,6 @@ async def async_main(args):
 
     logging.debug(f"Python version: {platform.python_version()}")
     config_file = result.config_file or open_plate_settings.defaultSettingsLocation
-
-    if result.version:
-        if module_semver == module_version:
-            print(f"openplate v{module_semver}")
-        else:
-            print(f"openplate v{module_semver} (PyPI {module_version})")
-        exit(0)
 
     configuration = open_plate_settings.from_file(config_file)
     if configuration is None:
