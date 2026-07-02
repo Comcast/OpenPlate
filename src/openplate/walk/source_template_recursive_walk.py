@@ -31,6 +31,7 @@ from openplate.project_template_identity import source_cache_key
 from openplate.sibling_template_resolver import find_matching_template, render_sibling_template_config
 from openplate.shell_command_processor import process_command
 from openplate.util import str_to_bool
+from openplate.sources.source_cache import CommandTemplateSourceCache, close_command_template_source_cache
 from openplate.walk import template_init_commands_gate
 from openplate.walk.init_walker import walk_init
 from openplate.walk.recursive_walker import norm_relative_path
@@ -62,6 +63,7 @@ class TemplateWalkRuntimeState:
     completed_nodes: dict[TemplateNodeKey, CompletedTemplateNode] = field(default_factory=dict)
     in_progress_nodes: set[TemplateNodeKey] = field(default_factory=set)
     export_registry: dict[ExportIdentity, list[RenderedTemplateExport]] = field(default_factory=dict)
+    file_work_completed_nodes: set[TemplateNodeKey] = field(default_factory=set)
 
 
 @dataclass
@@ -80,6 +82,18 @@ def _template_node_key(
         source_cache_key(settings, config_project_template),
         config_project_template.dest_folder or ".",
     )
+
+
+def create_template_walk_runtime_state(
+    settings: OpenPlateSettings,
+    preseed_file_work_templates: Optional[list[project_config.ProjectTemplateConfig]] = None,
+) -> TemplateWalkRuntimeState:
+    runtime_state = TemplateWalkRuntimeState()
+    for config_project_template in preseed_file_work_templates or []:
+        runtime_state.file_work_completed_nodes.add(
+            _template_node_key(settings, config_project_template)
+        )
+    return runtime_state
 
 
 def _resolve_location(
@@ -263,6 +277,7 @@ async def _source_template_recursive_walk_single_result(
     raise_error_on_verify: bool,
     fail_on_prompt: bool,
     prompt_input_tracker: Optional[PromptInputTracker],
+    source_cache: CommandTemplateSourceCache,
     runtime_state: TemplateWalkRuntimeState,
 ) -> TemplateWalkResult:
     # Note, Dest folder is no longer a root for the template
@@ -271,22 +286,11 @@ async def _source_template_recursive_walk_single_result(
     if not os.path.exists(project_folder):
         raise FileNotFoundError("Project folder not found: " + project_folder)
 
-    source = config_project_template.to_source(settings)
-
     found_changes = False
     project_config_changed = False
 
-    with source:
-        logging.debug(f"Loading Template Configuration file")
-        config_template = template_config.from_file(
-            os.path.join(source.folder_path(), template_config.template_config_file_name))
-        logging.debug(f"useDeprecatedUserPaths: {config_template.useDeprecatedUserPaths()}")
-
-        # Update project's default dest_folder if not specified
-        if config_project_template.dest_folder is None:
-            config_project_template.dest_folder = config_template.default_dest_folder or ""
-            project_config_changed = True
-
+    node_key = None
+    if config_project_template.dest_folder is not None:
         node_key = _template_node_key(settings, config_project_template)
         completed_node = runtime_state.completed_nodes.get(node_key)
         if completed_node is not None:
@@ -297,9 +301,33 @@ async def _source_template_recursive_walk_single_result(
             logging.debug("Template instance already in progress, skipping recursive re-entry for %s", node_key)
             return TemplateWalkResult(False, False, "", set())
 
+    with source_cache.borrow_source(config_project_template) as source:
+        logging.debug(f"Loading Template Configuration file")
+        config_template = template_config.from_file(
+            os.path.join(source.folder_path(), template_config.template_config_file_name))
+        logging.debug(f"useDeprecatedUserPaths: {config_template.useDeprecatedUserPaths()}")
+
+        # Update project's default dest_folder if not specified
+        if config_project_template.dest_folder is None:
+            config_project_template.dest_folder = config_template.default_dest_folder or ""
+            project_config_changed = True
+
+        if node_key is None:
+            node_key = _template_node_key(settings, config_project_template)
+            completed_node = runtime_state.completed_nodes.get(node_key)
+            if completed_node is not None:
+                logging.debug("Template instance already completed, reusing exports for %s", node_key)
+                return TemplateWalkResult(False, False, completed_node.repo_sha, set(completed_node.visible_producer_keys))
+
+            if node_key in runtime_state.in_progress_nodes:
+                logging.debug("Template instance already in progress, skipping recursive re-entry for %s", node_key)
+                return TemplateWalkResult(False, False, "", set())
+
         runtime_state.in_progress_nodes.add(node_key)
         try:
-            if perform_init_walk and config_template.init_commands is not None:
+            should_process_file_work = node_key not in runtime_state.file_work_completed_nodes
+
+            if should_process_file_work and perform_init_walk and config_template.init_commands is not None:
                 if not template_init_commands_gate.confirm_continue_with_template_init_commands(
                     source=source,
                     init_commands=config_template.init_commands,
@@ -413,6 +441,7 @@ async def _source_template_recursive_walk_single_result(
                         raise_error_on_verify,
                         fail_on_prompt,
                         prompt_input_tracker,
+                        source_cache,
                         runtime_state,
                     )
                     if sub_result.project_config_changed:
@@ -449,7 +478,7 @@ async def _source_template_recursive_walk_single_result(
                 resolved_imports,
             )
 
-            if perform_init_walk:
+            if should_process_file_work and perform_init_walk:
                 walk_issues = await walk_init(
                     settings,
                     source,
@@ -468,7 +497,7 @@ async def _source_template_recursive_walk_single_result(
                             logging.error(issue)
                         raise RuntimeError("Issues found in destination folder")
 
-            if perform_verify_walk:
+            if should_process_file_work and perform_verify_walk:
                 walk_issues = await walk_verify(
                     settings,
                     walk_options,
@@ -488,7 +517,7 @@ async def _source_template_recursive_walk_single_result(
                             logging.error(issue)
                         raise RuntimeError("Issues found in destination folder")
 
-            if perform_update_walk:
+            if should_process_file_work and perform_update_walk:
                 await walk_update(
                     settings,
                     source,
@@ -503,7 +532,7 @@ async def _source_template_recursive_walk_single_result(
                 )
 
             # run init commands
-            if perform_init_walk and config_template.init_commands is not None:
+            if should_process_file_work and perform_init_walk and config_template.init_commands is not None:
                 for idx, init_command in enumerate(config_template.init_commands):
                     if not template_init_commands_gate.confirm_run_init_command(
                         source=source,
@@ -545,6 +574,9 @@ async def _source_template_recursive_walk_single_result(
                         folder = os.path.join(project_folder, relative_folder)
 
                     await process_command(command, folder)
+
+            if should_process_file_work and (perform_init_walk or perform_verify_walk or perform_update_walk):
+                runtime_state.file_work_completed_nodes.add(node_key)
 
             template_options = template_processor.compile_template_options(
                 config_template,
@@ -593,41 +625,51 @@ async def source_template_recursive_walk_all(
     raise_error_on_verify: bool,
     fail_on_prompt: bool,
     prompt_input_tracker: Optional[PromptInputTracker] = None,
+    source_cache: Optional[CommandTemplateSourceCache] = None,
     runtime_state: Optional[TemplateWalkRuntimeState] = None,
 ):
+    owns_source_cache = source_cache is None
+    if source_cache is None:
+        source_cache = CommandTemplateSourceCache(settings)
+
     if runtime_state is None:
         runtime_state = TemplateWalkRuntimeState()
 
-    project_config_changed = False
-    found_changes = False
-    last_sha = ""
-    for template in config_project.templates:
-        current_result = await _source_template_recursive_walk_single_result(
-            settings,
-            runtime_settings,
-            template,
-            destination,
-            walk_options,
-            config_project,
-            allow_template_commands,
-            perform_init_walk,
-            perform_verify_walk,
-            perform_update_walk,
-            create_non_template_files,
-            update_non_template_files,
-            raise_error_on_verify,
-            fail_on_prompt,
-            prompt_input_tracker,
-            runtime_state,
-        )
-        if current_result.project_config_changed:
-            project_config_changed = True
-        if current_result.found_changes:
-            found_changes = True
-        if current_result.sha:
-            last_sha = current_result.sha
+    try:
+        project_config_changed = False
+        found_changes = False
+        last_sha = ""
+        for template in config_project.templates:
+            current_result = await _source_template_recursive_walk_single_result(
+                settings,
+                runtime_settings,
+                template,
+                destination,
+                walk_options,
+                config_project,
+                allow_template_commands,
+                perform_init_walk,
+                perform_verify_walk,
+                perform_update_walk,
+                create_non_template_files,
+                update_non_template_files,
+                raise_error_on_verify,
+                fail_on_prompt,
+                prompt_input_tracker,
+                source_cache,
+                runtime_state,
+            )
+            if current_result.project_config_changed:
+                project_config_changed = True
+            if current_result.found_changes:
+                found_changes = True
+            if current_result.sha:
+                last_sha = current_result.sha
 
-    return project_config_changed, found_changes, last_sha
+        return project_config_changed, found_changes, last_sha
+    finally:
+        if owns_source_cache:
+            close_command_template_source_cache(source_cache)
 
 async def source_template_recursive_walk_single(
     settings: OpenPlateSettings,
@@ -645,28 +687,38 @@ async def source_template_recursive_walk_single(
     raise_error_on_verify: bool,
     fail_on_prompt: bool,
     prompt_input_tracker: Optional[PromptInputTracker] = None,
+    source_cache: Optional[CommandTemplateSourceCache] = None,
     runtime_state: Optional[TemplateWalkRuntimeState] = None,
 ):
+    owns_source_cache = source_cache is None
+    if source_cache is None:
+        source_cache = CommandTemplateSourceCache(settings)
+
     if runtime_state is None:
         runtime_state = TemplateWalkRuntimeState()
 
-    result = await _source_template_recursive_walk_single_result(
-        settings,
-        runtime_settings,
-        config_project_template,
-        project_folder,
-        walk_options,
-        config_project,
-        allow_template_commands,
-        perform_init_walk,
-        perform_verify_walk,
-        perform_update_walk,
-        create_non_template_files,
-        update_non_template_files,
-        raise_error_on_verify,
-        fail_on_prompt,
-        prompt_input_tracker,
-        runtime_state,
-    )
-    return result.project_config_changed, result.found_changes, result.sha
+    try:
+        result = await _source_template_recursive_walk_single_result(
+            settings,
+            runtime_settings,
+            config_project_template,
+            project_folder,
+            walk_options,
+            config_project,
+            allow_template_commands,
+            perform_init_walk,
+            perform_verify_walk,
+            perform_update_walk,
+            create_non_template_files,
+            update_non_template_files,
+            raise_error_on_verify,
+            fail_on_prompt,
+            prompt_input_tracker,
+            source_cache,
+            runtime_state,
+        )
+        return result.project_config_changed, result.found_changes, result.sha
+    finally:
+        if owns_source_cache:
+            close_command_template_source_cache(source_cache)
 

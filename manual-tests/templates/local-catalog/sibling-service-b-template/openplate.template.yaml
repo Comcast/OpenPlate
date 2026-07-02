@@ -1,0 +1,15 @@
+default_dest_folder: "."
+ignore_paths:
+  - "^openplate\\.template\\.yaml$"
+  - "^README\\.md$"
+replacement_paths:
+  - "service-b/.*"
+require_sibling_templates:
+  - template_url: "__SIBLING_SHARED_URL__"
+    dest_folder: "."
+    parameters:
+      marker_name: "service-b-shared"
+imports:
+  - export-key: "worker-name"
+    location: "."
+    import-key: "worker_name"
