@@ -18,6 +18,7 @@
 #              This product includes software developed at Comcast (https://www.comcast.com/).#
 import logging
 import sys
+from contextlib import contextmanager
 
 from openplate.cfg.open_plate_settings import OpenPlateSettings
 from openplate.project_template_identity import source_cache_key
@@ -39,6 +40,10 @@ class CommandTemplateSourceCache:
         source.__enter__()
         self._sources[key] = source
         return source
+
+    @contextmanager
+    def borrow_source(self, config_project_template):
+        yield self.get_source(config_project_template)
 
     def close(self):
         first_error = None

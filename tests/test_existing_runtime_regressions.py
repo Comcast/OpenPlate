@@ -33,6 +33,7 @@ from openplate.commands.project_init import InitOptions
 from openplate.commands.project_update import UpdateOptions
 from openplate.commands import project_init, project_update
 from openplate.sources.url_source import UrlTemplateSource
+from openplate.walk import source_template_recursive_walk
 
 
 pytestmark = pytest.mark.unit
@@ -52,6 +53,18 @@ def _write_template_repo(repo_path: Path, template_yaml: str):
     repo_path.mkdir(parents=True, exist_ok=True)
     (repo_path / "openplate.template.yaml").write_text(template_yaml, encoding="utf-8")
     (repo_path / "README.md").write_text("template\n", encoding="utf-8")
+    _create_git_repo(repo_path)
+    return f"{repo_path.as_uri()}#main"
+
+
+def _write_template_repo_with_files(repo_path: Path, template_yaml: str, files: dict[str, str]):
+    repo_path.mkdir(parents=True, exist_ok=True)
+    (repo_path / "openplate.template.yaml").write_text(template_yaml, encoding="utf-8")
+    (repo_path / "README.md").write_text("template\n", encoding="utf-8")
+    for relative_path, contents in files.items():
+        file_path = repo_path / relative_path
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.write_text(contents, encoding="utf-8")
     _create_git_repo(repo_path)
     return f"{repo_path.as_uri()}#main"
 
@@ -168,7 +181,7 @@ def test_project_update_prints_status_before_project_config_load_failure(tmp_pat
     assert "Running update on folder:" in capsys.readouterr().out
 
 
-def test_runtime_init_reopens_same_source_for_recursive_siblings(tmp_path, monkeypatch, capsys):
+def test_runtime_init_reuses_single_source_for_recursive_siblings(tmp_path, monkeypatch, capsys):
     repo_path = tmp_path / "template"
     source_url = _write_template_repo(
         repo_path,
@@ -212,7 +225,329 @@ require_sibling_templates:
     asyncio.run(async_main(args))
 
     capsys.readouterr()
+    assert enter_count == 1
+
+
+def test_later_init_reuses_existing_sibling_without_overwrite_and_preserves_exports(tmp_path):
+    sibling_source_url = _write_template_repo_with_files(
+        tmp_path / "sibling-template",
+        "\n".join([
+            "ignore_paths:",
+            "  - '^openplate\\.template\\.yaml$'",
+            "  - '^README\\.md$'",
+            "exports:",
+            "  - key: worker-name",
+            "    value: shared-worker",
+            "replacement_paths:",
+            "  - 'shared/.*'",
+            "",
+        ]),
+        {"shared/root.txt": "shared-root\n"},
+    )
+    first_source_url = _write_template_repo_with_files(
+        tmp_path / "first-template",
+        "\n".join([
+            "ignore_paths:",
+            "  - '^openplate\\.template\\.yaml$'",
+            "  - '^README\\.md$'",
+            "require_sibling_templates:",
+            f"  - template_url: \"{sibling_source_url}\"",
+            "    dest_folder: .",
+            "replacement_paths:",
+            "  - 'first/.*'",
+            "",
+        ]),
+        {"first/a.txt": "first\n"},
+    )
+    second_source_url = _write_template_repo_with_files(
+        tmp_path / "second-template",
+        "\n".join([
+            "ignore_paths:",
+            "  - '^openplate\\.template\\.yaml$'",
+            "  - '^README\\.md$'",
+            "require_sibling_templates:",
+            f"  - template_url: \"{sibling_source_url}\"",
+            "    dest_folder: .",
+            "imports:",
+            "  - export-key: worker-name",
+            "    location: .",
+            "    import-key: worker_name",
+            "replacement_paths:",
+            "  - 'second/.*'",
+            "",
+        ]),
+        {"second/b.txt": "{{ imports.worker_name }}\n"},
+    )
+    project_path = tmp_path / "project"
+    project_path.mkdir()
+
+    asyncio.run(
+        async_main([
+            "openplate",
+            "-c",
+            str(tmp_path / "missing-config.yaml"),
+            "init",
+            "-p",
+            str(project_path),
+            first_source_url,
+            "--dest-folder",
+            "first-root",
+        ])
+    )
+
+    shared_root_path = project_path / "shared" / "root.txt"
+    shared_root_path.write_text("user-modified\n", encoding="utf-8")
+
+    asyncio.run(
+        async_main([
+            "openplate",
+            "-c",
+            str(tmp_path / "missing-config.yaml"),
+            "init",
+            "-p",
+            str(project_path),
+            second_source_url,
+            "--dest-folder",
+            "second-root",
+        ])
+    )
+
+    config = yaml.safe_load((project_path / project_config_file_name).read_text(encoding="utf-8"))
+    sibling_entries = [
+        template
+        for template in config["templates"]
+        if template["src_url"] == sibling_source_url and template["dest_folder"] == "."
+    ]
+
+    assert shared_root_path.read_text(encoding="utf-8") == "user-modified\n"
+    assert (project_path / "second" / "b.txt").read_text(encoding="utf-8") == "shared-worker\n"
+    assert len(sibling_entries) == 1
+
+
+def test_init_overwrite_updates_reused_sibling_only_once_per_command(tmp_path, monkeypatch):
+    sibling_source_url = _write_template_repo_with_files(
+        tmp_path / "sibling-template",
+        "\n".join([
+            "ignore_paths:",
+            "  - '^openplate\\.template\\.yaml$'",
+            "  - '^README\\.md$'",
+            "exports:",
+            "  - key: worker-name",
+            "    value: shared-worker",
+            "replacement_paths:",
+            "  - 'shared/.*'",
+            "",
+        ]),
+        {"shared/root.txt": "shared-root\n"},
+    )
+    first_source_url = _write_template_repo_with_files(
+        tmp_path / "first-template",
+        "\n".join([
+            "ignore_paths:",
+            "  - '^openplate\\.template\\.yaml$'",
+            "  - '^README\\.md$'",
+            "require_sibling_templates:",
+            f"  - template_url: \"{sibling_source_url}\"",
+            "    dest_folder: .",
+            "replacement_paths:",
+            "  - 'first/.*'",
+            "",
+        ]),
+        {"first/a.txt": "first\n"},
+    )
+    service_a_source_url = _write_template_repo_with_files(
+        tmp_path / "service-a-template",
+        "\n".join([
+            "ignore_paths:",
+            "  - '^openplate\\.template\\.yaml$'",
+            "  - '^README\\.md$'",
+            "require_sibling_templates:",
+            f"  - template_url: \"{sibling_source_url}\"",
+            "    dest_folder: .",
+            "imports:",
+            "  - export-key: worker-name",
+            "    location: .",
+            "    import-key: worker_name",
+            "replacement_paths:",
+            "  - 'service-a/.*'",
+            "",
+        ]),
+        {"service-a/a.txt": "{{ imports.worker_name }}\n"},
+    )
+    service_b_source_url = _write_template_repo_with_files(
+        tmp_path / "service-b-template",
+        "\n".join([
+            "ignore_paths:",
+            "  - '^openplate\\.template\\.yaml$'",
+            "  - '^README\\.md$'",
+            "require_sibling_templates:",
+            f"  - template_url: \"{sibling_source_url}\"",
+            "    dest_folder: .",
+            "imports:",
+            "  - export-key: worker-name",
+            "    location: .",
+            "    import-key: worker_name",
+            "replacement_paths:",
+            "  - 'service-b/.*'",
+            "",
+        ]),
+        {"service-b/b.txt": "{{ imports.worker_name }}\n"},
+    )
+    second_source_url = _write_template_repo(
+        tmp_path / "second-template",
+        "\n".join([
+            "ignore_paths:",
+            "  - '^openplate\\.template\\.yaml$'",
+            "  - '^README\\.md$'",
+            "require_sibling_templates:",
+            f"  - template_url: \"{service_a_source_url}\"",
+            "    dest_folder: service-a",
+            f"  - template_url: \"{service_b_source_url}\"",
+            "    dest_folder: service-b",
+            "",
+        ]),
+    )
+    project_path = tmp_path / "project"
+    project_path.mkdir()
+
+    asyncio.run(
+        async_main([
+            "openplate",
+            "-c",
+            str(tmp_path / "missing-config.yaml"),
+            "init",
+            "-p",
+            str(project_path),
+            first_source_url,
+            "--dest-folder",
+            "first-root",
+        ])
+    )
+
+    update_count = 0
+    original_walk_update = source_template_recursive_walk.walk_update
+
+    async def counting_walk_update(settings, source, project_folder, config_project, config_project_template, config_template_project, config_template, template_options, create_non_template_files, update_non_template_files):
+        nonlocal update_count
+        if config_project_template.src_url == sibling_source_url and config_project_template.dest_folder == ".":
+            update_count += 1
+        return await original_walk_update(
+            settings,
+            source,
+            project_folder,
+            config_project,
+            config_project_template,
+            config_template_project,
+            config_template,
+            template_options,
+            create_non_template_files,
+            update_non_template_files,
+        )
+
+    monkeypatch.setattr(source_template_recursive_walk, "walk_update", counting_walk_update)
+
+    shared_root_path = project_path / "shared" / "root.txt"
+    shared_root_path.write_text("user-modified\n", encoding="utf-8")
+
+    asyncio.run(
+        async_main([
+            "openplate",
+            "-c",
+            str(tmp_path / "missing-config.yaml"),
+            "init",
+            "-p",
+            str(project_path),
+            second_source_url,
+            "--dest-folder",
+            "second-root",
+            "--overwrite",
+        ])
+    )
+
+    config = yaml.safe_load((project_path / project_config_file_name).read_text(encoding="utf-8"))
+    sibling_entries = [
+        template
+        for template in config["templates"]
+        if template["src_url"] == sibling_source_url and template["dest_folder"] == "."
+    ]
+
+    assert update_count == 1
+    assert shared_root_path.read_text(encoding="utf-8") == "shared-root\n"
+    assert (project_path / "service-a" / "a.txt").read_text(encoding="utf-8") == "shared-worker\n"
+    assert (project_path / "service-b" / "b.txt").read_text(encoding="utf-8") == "shared-worker\n"
+    assert len(sibling_entries) == 1
+
+
+def test_runtime_init_cleans_up_reused_sources_after_failure(tmp_path, monkeypatch):
+    sibling_source_url = _write_template_repo_with_files(
+        tmp_path / "sibling-template",
+        "\n".join([
+            "ignore_paths:",
+            "  - '^openplate\\.template\\.yaml$'",
+            "  - '^README\\.md$'",
+            "replacement_paths:",
+            "  - 'shared/.*'",
+            "",
+        ]),
+        {"shared/root.txt": "shared-root\n"},
+    )
+    source_url = _write_template_repo_with_files(
+        tmp_path / "root-template",
+        "\n".join([
+            "ignore_paths:",
+            "  - '^openplate\\.template\\.yaml$'",
+            "  - '^README\\.md$'",
+            "require_sibling_templates:",
+            f"  - template_url: \"{sibling_source_url}\"",
+            "    dest_folder: .",
+            "imports:",
+            "  - export-key: missing-export",
+            "    location: .",
+            "    import-key: missing_export",
+            "replacement_paths:",
+            "  - 'root/.*'",
+            "",
+        ]),
+        {"root/a.txt": "{{ imports.missing_export }}\n"},
+    )
+    project_path = tmp_path / "project"
+    project_path.mkdir()
+
+    enter_count = 0
+    exit_count = 0
+    original_enter = UrlTemplateSource.__enter__
+    original_exit = UrlTemplateSource.__exit__
+
+    def counting_enter(self):
+        nonlocal enter_count
+        enter_count += 1
+        return original_enter(self)
+
+    def counting_exit(self, exception_type, exception_value, traceback):
+        nonlocal exit_count
+        exit_count += 1
+        return original_exit(self, exception_type, exception_value, traceback)
+
+    monkeypatch.setattr(UrlTemplateSource, "__enter__", counting_enter)
+    monkeypatch.setattr(UrlTemplateSource, "__exit__", counting_exit)
+
+    with pytest.raises(RuntimeError, match="Unresolved import"):
+        asyncio.run(
+            async_main([
+                "openplate",
+                "-c",
+                str(tmp_path / "missing-config.yaml"),
+                "init",
+                "-p",
+                str(project_path),
+                source_url,
+                "--dest-folder",
+                "root-dest",
+            ])
+        )
+
     assert enter_count == 2
+    assert exit_count == 2
 
 
 def test_project_config_does_not_persist_raw_prompt_identity_fields(tmp_path):

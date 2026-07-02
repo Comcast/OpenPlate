@@ -24,7 +24,12 @@ from openplate.cfg.open_plate_settings import OpenPlateSettings, OpenPlateRuntim
 from openplate.prompts.prompt_input_logging import log_ignored_prompt_templates
 from openplate.prompts.prompt_document_collector import collect_prompt_document_single
 from openplate.prompts.prompt_document import PromptDocument, PromptInputTracker
-from openplate.walk.source_template_recursive_walk import VerifyWalkOptions, source_template_recursive_walk_single
+from openplate.sources.source_cache import CommandTemplateSourceCache, close_command_template_source_cache
+from openplate.walk.source_template_recursive_walk import (
+    VerifyWalkOptions,
+    create_template_walk_runtime_state,
+    source_template_recursive_walk_single,
+)
 
 
 class InitOptions:
@@ -83,6 +88,7 @@ async def run(
         settings,
         os.path.join(options.destination, project_config.project_config_file_name)
     )
+    existing_templates = list(config_project.templates)
 
     tracked_template = next(
         (
@@ -117,26 +123,36 @@ async def run(
     if options.prompt_document is not None:
         prompt_input_tracker = PromptInputTracker(options.prompt_document)
 
-    await source_template_recursive_walk_single(
+    runtime_state = create_template_walk_runtime_state(
         settings,
-        runtime_settings,
-        tracked_template,
-        options.destination,
-        VerifyWalkOptions(
-            True,
-            False
-        ),
-        config_project,
-        allow_template_commands,
-        not options.overwrite_existing_files,
-        False,
-        True,
-        True,
-        options.overwrite_existing_files,
-        True,
-        options.prompt_document is not None,
-        prompt_input_tracker,
+        existing_templates if not options.overwrite_existing_files else None,
     )
+    source_cache = CommandTemplateSourceCache(settings)
+    try:
+        await source_template_recursive_walk_single(
+            settings,
+            runtime_settings,
+            tracked_template,
+            options.destination,
+            VerifyWalkOptions(
+                True,
+                False
+            ),
+            config_project,
+            allow_template_commands,
+            not options.overwrite_existing_files,
+            False,
+            True,
+            True,
+            options.overwrite_existing_files,
+            True,
+            options.prompt_document is not None,
+            prompt_input_tracker,
+            source_cache=source_cache,
+            runtime_state=runtime_state,
+        )
+    finally:
+        close_command_template_source_cache(source_cache)
 
     log_ignored_prompt_templates(prompt_input_tracker)
 

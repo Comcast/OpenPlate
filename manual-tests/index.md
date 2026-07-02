@@ -34,6 +34,9 @@ The bash runner materializes local git-backed template repositories from the che
 | `case-2` | Exercise prompt-driven init behavior and template-command safety gates | `init`, `config set --allow-template-commands`, `--ask-hidden` | [manual-tests/case-2.md](manual-tests/case-2.md) |
 | `case-3` | Export prompt JSON for init and update, mutate only the answers that matter, and import via file and stdin using the same execution context | `project print-init-json`, `project print-update-json`, `init --prompts-json-file`, `init --prompts-json-stdin`, `update --prompts-json-file`, `update --prompts-json-stdin` | [manual-tests/case-3.md](manual-tests/case-3.md) |
 | `case-4` | Create drift, repair it with update modes, and verify the final state | `update`, `verify` | [manual-tests/case-4.md](manual-tests/case-4.md) |
+| `case-5` | Reuse an already tracked sibling across later init runs and validate command-scoped source reuse | `init`, `init --overwrite`, `--debug` | [manual-tests/case-5.md](manual-tests/case-5.md) |
+| `case-6` | Rebuild deleted shared-sibling outputs during update and prove only the tracked sibling artifact returns | `update --update-missing`, `--debug` | [manual-tests/case-6.md](manual-tests/case-6.md) |
+| `case-7` | Verify repeated shared siblings once and report only tracked missing artifacts | `verify`, `--debug` | [manual-tests/case-7.md](manual-tests/case-7.md) |
 
 ## Coverage Matrix
 
@@ -74,6 +77,13 @@ The matrix below accounts for the current visible CLI surface from [docs/command
 | `init --no-cache` | `manual:case-1` | Case 1 validates `no_cache: true` in the generated project config. |
 | `init --ignore` | `manual:case-1` | Case 1 filters the runbook file and validates that it is absent. |
 | `init --overwrite` | `manual:case-1` | Case 1 first proves a plain rerun of init is rejected for the same tracked template and dest-folder, then reruns with overwrite to verify files are restored, init commands do not rerun, and the project config does not gain a duplicate template entry. |
+| `init` tracked sibling reuse without `--overwrite` | `manual:case-5` | Case 5 reruns init through a different root template that references an already tracked sibling at `.` and validates no collision, no sibling rewrite, preserved imports, and no duplicate sibling entry. |
+| `init` tracked sibling reuse with `--overwrite` | `manual:case-5` | Case 5 reruns init through a different root template with `--overwrite` and validates the shared sibling updates only once for the command while still avoiding duplicate sibling entries. |
+| Recursive template-source reuse within one command | `manual:case-5` | Case 5 enables debug logging on the overwrite run and validates one source-open log for the reused shared sibling template URL. |
+| `update` tracked sibling reuse with deleted shared outputs | `manual:case-6` | Case 6 deletes template-managed shared-sibling outputs, reruns `update --update-missing`, and validates that only the tracked shared marker artifact is recreated while branch-specific sibling marker files stay absent. |
+| Recursive template-source reuse during update | `manual:case-6` | Case 6 enables debug logging on update and validates one source-open log for the reused shared sibling template URL. |
+| `verify` tracked sibling reuse with deleted shared outputs | `manual:case-7` | Case 7 deletes tracked shared readonly files, reruns verify, and validates that each tracked shared file is reported missing once while branch-specific sibling marker files are never referenced. |
+| Recursive template-source reuse during verify | `manual:case-7` | Case 7 enables debug logging on verify and validates one source-open log for the reused shared sibling template URL on both the passing and failing verify runs. |
 | `init --allow-template-commands` | `manual:case-4` | Case 4 uses the one-time override on init, while Case 2 covers the persistent config toggle. |
 | `init/update --allow-last-updater-email` | `automated-only` | Focused consent-gating tests cover the per-run override, interactive caching, and non-interactive failure rules. |
 | `init hidden prompts` | `manual:case-2` | Case 2 validates hidden fallback and `--ask-hidden` behavior directly. |
@@ -105,6 +115,9 @@ The matrix below accounts for the current visible CLI surface from [docs/command
 - Run [manual-tests/case-2.md](manual-tests/case-2.md) when changing prompt logic, hidden behavior, or template-command safety behavior.
 - Run [manual-tests/case-3.md](manual-tests/case-3.md) when changing prompt JSON export, import, sibling discovery, node identity behavior, or init placement and update context rules.
 - Run [manual-tests/case-4.md](manual-tests/case-4.md) when changing update or verify walkers.
+- Run [manual-tests/case-5.md](manual-tests/case-5.md) when changing recursive init sibling reuse, init overwrite behavior for already tracked siblings, or command-scoped template source reuse.
+- Run [manual-tests/case-6.md](manual-tests/case-6.md) when changing update handling for repeated shared siblings, deleted template-managed sibling outputs, or command-scoped source reuse during update.
+- Run [manual-tests/case-7.md](manual-tests/case-7.md) when changing verify handling for repeated shared siblings, missing tracked shared readonly files, or command-scoped source reuse during verify.
 
 ## Public-Safety Rules
 

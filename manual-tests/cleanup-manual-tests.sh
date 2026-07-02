@@ -7,14 +7,14 @@ source "$SCRIPT_ROOT/manual-test-lib.sh"
 
 usage() {
   cat <<'EOF'
-Usage: ./manual-tests/cleanup-manual-tests.sh [case-1|case-2|case-3|case-4|all]
+Usage: ./manual-tests/cleanup-manual-tests.sh [case-1|case-2|case-3|case-4|case-5|case-6|case-7|all]
 EOF
 }
 
 CASE="${1:-all}"
 
 case "$CASE" in
-  case-1|case-2|case-3|case-4|all) ;;
+  case-1|case-2|case-3|case-4|case-5|case-6|case-7|all) ;;
   -h|--help)
     usage
     exit 0
@@ -42,7 +42,7 @@ remove_recorded_sandbox_if_safe() {
 }
 
 if [[ "$CASE" == 'all' ]]; then
-  cases_to_clean=(case-1 case-2 case-3 case-4)
+  cases_to_clean=(case-1 case-2 case-3 case-4 case-5 case-6 case-7)
 else
   cases_to_clean=("$CASE")
 fi
