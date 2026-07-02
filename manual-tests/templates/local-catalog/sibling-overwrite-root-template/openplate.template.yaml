@@ -1,0 +1,9 @@
+default_dest_folder: "."
+ignore_paths:
+  - "^openplate\\.template\\.yaml$"
+  - "^README\\.md$"
+require_sibling_templates:
+  - template_url: "__SIBLING_SERVICE_A_URL__"
+    dest_folder: "service-a"
+  - template_url: "__SIBLING_SERVICE_B_URL__"
+    dest_folder: "service-b"

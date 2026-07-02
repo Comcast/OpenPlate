@@ -25,6 +25,7 @@ from openplate.cfg.open_plate_settings import OpenPlateSettings, OpenPlateRuntim
 from openplate.prompts.prompt_input_logging import log_ignored_prompt_templates
 from openplate.prompts.prompt_document_collector import collect_prompt_document_all
 from openplate.prompts.prompt_document import PromptDocument, PromptInputTracker
+from openplate.sources.source_cache import CommandTemplateSourceCache, close_command_template_source_cache
 from openplate.walk.source_template_recursive_walk import VerifyWalkOptions, source_template_recursive_walk_all
 
 
@@ -93,25 +94,30 @@ async def run(
     if options.prompt_document is not None:
         prompt_input_tracker = PromptInputTracker(options.prompt_document)
 
-    (config_updated, found_changes, sha) = await source_template_recursive_walk_all(
-        settings,
-        runtime_settings,
-        options.destination,
-        VerifyWalkOptions(
+    source_cache = CommandTemplateSourceCache(settings)
+    try:
+        (config_updated, found_changes, sha) = await source_template_recursive_walk_all(
+            settings,
+            runtime_settings,
+            options.destination,
+            VerifyWalkOptions(
+                False,
+                False
+            ),
+            config_project,
+            settings.allow_template_commands,
             False,
-            False
-        ),
-        config_project,
-        settings.allow_template_commands,
-        False,
-        False,
-        True,
-        options.create_non_template_files,
-        options.update_non_template_files,
-        False,
-        options.prompt_document is not None,
-        prompt_input_tracker,
-    )
+            False,
+            True,
+            options.create_non_template_files,
+            options.update_non_template_files,
+            False,
+            options.prompt_document is not None,
+            prompt_input_tracker,
+            source_cache=source_cache,
+        )
+    finally:
+        close_command_template_source_cache(source_cache)
 
     log_ignored_prompt_templates(prompt_input_tracker)
 

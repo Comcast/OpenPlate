@@ -7,7 +7,7 @@ source "$SCRIPT_DIR_FROM_BASH_SOURCE/manual-test-lib.sh"
 
 usage() {
   cat <<'EOF'
-Usage: ./manual-tests/run-manual-tests.sh [case-1|case-2|case-3|case-4|all]
+Usage: ./manual-tests/run-manual-tests.sh [case-1|case-2|case-3|case-4|case-5|case-6|case-7|all]
 
 Environment variables:
   PYTHON_EXE   Python executable to use (default: python)
@@ -34,7 +34,7 @@ else
 fi
 
 case "$CASE" in
-  case-1|case-2|case-3|case-4|all) ;;
+  case-1|case-2|case-3|case-4|case-5|case-6|case-7|all) ;;
   -h|--help)
     usage
     exit 0
@@ -305,6 +305,39 @@ assert_file_not_contains() {
   fi
 }
 
+assert_fixed_string_count() {
+  local path="$1"
+  local expected_text="$2"
+  local expected_count="$3"
+  assert_path_exists "$path"
+  local actual_count
+  actual_count="$(grep -F -c -- "$expected_text" "$path")"
+  actual_count="$(printf '%s' "$actual_count" | tr -d '\r\n')"
+  if [[ "$actual_count" != "$expected_count" ]]; then
+    echo "Expected '$expected_text' to appear $expected_count times in $path, found $actual_count" >&2
+    exit 1
+  fi
+}
+
+count_templates_for_source_dest() {
+  local config_path="$1"
+  local source_url="$2"
+  local dest_folder="$3"
+  "$PYTHON_EXE" - "$(python_path_arg "$config_path")" "$source_url" "$dest_folder" <<'PY'
+import sys
+import yaml
+from pathlib import Path
+
+data = yaml.safe_load(Path(sys.argv[1]).read_text(encoding='utf-8')) or {}
+templates = data.get('templates') or []
+count = 0
+for template in templates:
+    if template.get('src_url') == sys.argv[2] and template.get('dest_folder') == sys.argv[3]:
+        count += 1
+print(count)
+PY
+}
+
 reset_case_folders() {
   local case_id="$1"
   rm -rf "$WORK_ROOT/$case_id" "$ARTIFACTS_ROOT/$case_id"
@@ -342,17 +375,31 @@ new_local_catalog_repo() {
   local repo_url_without_ref
   repo_url_without_ref="$(file_url "$repo_path")"
   local worker_source_url="${repo_url_without_ref}?path=prompt-worker-template#main"
-  local prompt_root_config="$repo_path/prompt-root-template/openplate.template.yaml"
+  local sibling_shared_source_url="${repo_url_without_ref}?path=sibling-shared-template#main"
+  local sibling_service_a_source_url="${repo_url_without_ref}?path=sibling-service-a-template#main"
+  local sibling_service_b_source_url="${repo_url_without_ref}?path=sibling-service-b-template#main"
 
-  "$PYTHON_EXE" - "$(python_path_arg "$prompt_root_config")" "$worker_source_url" <<'PY'
+  "$PYTHON_EXE" - "$(python_path_arg "$repo_path")" "$worker_source_url" "$sibling_shared_source_url" "$sibling_service_a_source_url" "$sibling_service_b_source_url" <<'PY'
 from pathlib import Path
 import sys
 
-path = Path(sys.argv[1])
-path.write_text(
-    path.read_text(encoding="utf-8").replace("__PROMPT_WORKER_URL__", sys.argv[2]),
-    encoding="utf-8",
-)
+repo_path = Path(sys.argv[1])
+replacements = {
+  "__PROMPT_WORKER_URL__": sys.argv[2],
+  "__SIBLING_SHARED_URL__": sys.argv[3],
+  "__SIBLING_SERVICE_A_URL__": sys.argv[4],
+  "__SIBLING_SERVICE_B_URL__": sys.argv[5],
+}
+
+for file_path in repo_path.rglob("*"):
+  if not file_path.is_file():
+    continue
+  contents = file_path.read_text(encoding="utf-8")
+  updated_contents = contents
+  for old_value, new_value in replacements.items():
+    updated_contents = updated_contents.replace(old_value, new_value)
+  if updated_contents != contents:
+    file_path.write_text(updated_contents, encoding="utf-8")
 PY
 
   initialize_git_repo "$repo_path"
@@ -881,13 +928,230 @@ run_case4() {
     'Validated update, --update-missing, --update-full, --ask-again, top-level verify in human mode, and top-level verify with --automation output.'
 }
 
+run_case5() {
+  local case_id='case-5'
+  reset_case_folders "$case_id"
+
+  local repo_path
+  repo_path="$(new_local_catalog_repo "$case_id")"
+  local repo_url
+  repo_url="$(file_url "$repo_path")"
+  local first_source_url="${repo_url}?path=sibling-first-template#main"
+  local import_source_url="${repo_url}?path=sibling-import-root-template#main"
+  local overwrite_source_url="${repo_url}?path=sibling-overwrite-root-template#main"
+  local shared_source_url="${repo_url}?path=sibling-shared-template#main"
+
+  local case_work="$WORK_ROOT/$case_id"
+  local config_path="$case_work/openplate-config.yaml"
+  local project_path="$case_work/sibling-project"
+  ensure_dir "$project_path"
+  initialize_git_repo "$project_path"
+
+  invoke_openplate "$case_id" '01-init-first.log' '0' '' -c "$(to_windows_path "$config_path")" init --project-root "$(to_windows_path "$project_path")" --dest-folder 'first-root' "$first_source_url" >/dev/null
+
+  local shared_root_path="$project_path/shared/root.txt"
+  local tracked_marker_path="$project_path/shared/tracked-shared.txt"
+  local import_marker_path="$project_path/shared/import-shared.txt"
+  local service_a_marker_path="$project_path/shared/service-a-shared.txt"
+  local service_b_marker_path="$project_path/shared/service-b-shared.txt"
+  local imported_path="$project_path/second/b.txt"
+  local service_a_path="$project_path/service-a/a.txt"
+  local service_b_path="$project_path/service-b/b.txt"
+  local project_config_path="$project_path/.openplate.project.yaml"
+  assert_file_contains "$shared_root_path" 'shared-root'
+  assert_file_contains "$tracked_marker_path" 'marker=tracked-shared'
+  assert_path_missing "$import_marker_path"
+  assert_path_missing "$service_a_marker_path"
+  assert_path_missing "$service_b_marker_path"
+
+  clear_readonly_file "$shared_root_path"
+  printf 'user-modified\n' > "$shared_root_path"
+
+  invoke_openplate "$case_id" '02-init-reuse-no-overwrite.log' '0' '' -c "$(to_windows_path "$config_path")" init --project-root "$(to_windows_path "$project_path")" --dest-folder 'second-root' "$import_source_url" >/dev/null
+
+  assert_file_contains "$shared_root_path" 'user-modified'
+  assert_file_contains "$imported_path" 'shared-worker'
+  assert_file_contains "$tracked_marker_path" 'marker=tracked-shared'
+  assert_path_missing "$import_marker_path"
+
+  local sibling_template_count
+  sibling_template_count="$(count_templates_for_source_dest "$project_config_path" "$shared_source_url" '.')"
+  sibling_template_count="$(printf '%s' "$sibling_template_count" | tr -d '\r\n')"
+  if [[ "$sibling_template_count" != '1' ]]; then
+    echo "Expected exactly one tracked shared sibling after reuse without overwrite, found: $sibling_template_count" >&2
+    exit 1
+  fi
+
+  clear_readonly_file "$shared_root_path"
+  printf 'user-modified-again\n' > "$shared_root_path"
+
+  local overwrite_log
+  overwrite_log="$(invoke_openplate "$case_id" '03-init-reuse-overwrite.log' '0' '' -d -c "$(to_windows_path "$config_path")" init --project-root "$(to_windows_path "$project_path")" --overwrite --dest-folder 'composite-root' "$overwrite_source_url")"
+
+  assert_file_contains "$shared_root_path" 'shared-root'
+  assert_file_contains "$service_a_path" 'shared-worker'
+  assert_file_contains "$service_b_path" 'shared-worker'
+  assert_file_contains "$tracked_marker_path" 'marker=tracked-shared'
+  assert_path_missing "$import_marker_path"
+  assert_path_missing "$service_a_marker_path"
+  assert_path_missing "$service_b_marker_path"
+  assert_fixed_string_count "$overwrite_log" "Getting Source from url: $shared_source_url" '1'
+
+  sibling_template_count="$(count_templates_for_source_dest "$project_config_path" "$shared_source_url" '.')"
+  sibling_template_count="$(printf '%s' "$sibling_template_count" | tr -d '\r\n')"
+  if [[ "$sibling_template_count" != '1' ]]; then
+    echo "Expected exactly one tracked shared sibling after overwrite reuse, found: $sibling_template_count" >&2
+    exit 1
+  fi
+
+  write_summary "$case_id" \
+    "Catalog repo: $repo_path" \
+    "Shared sibling source: $shared_source_url" \
+    "Initial root source: $first_source_url" \
+    "Importing root source: $import_source_url" \
+    "Overwrite root source: $overwrite_source_url" \
+    'Validated later init reuse for an already tracked sibling at ., including no-overwrite preservation of existing sibling files with preserved imports, overwrite single-pass sibling updates, no duplicate sibling entry, and one command-scoped source fetch for the shared sibling during the overwrite run.'
+}
+
+run_case6() {
+  local case_id='case-6'
+  reset_case_folders "$case_id"
+
+  local repo_path
+  repo_path="$(new_local_catalog_repo "$case_id")"
+  local repo_url
+  repo_url="$(file_url "$repo_path")"
+  local first_source_url="${repo_url}?path=sibling-first-template#main"
+  local composite_source_url="${repo_url}?path=sibling-overwrite-root-template#main"
+  local shared_source_url="${repo_url}?path=sibling-shared-template#main"
+
+  local case_work="$WORK_ROOT/$case_id"
+  local config_path="$case_work/openplate-config.yaml"
+  local project_path="$case_work/update-shared-project"
+  ensure_dir "$project_path"
+  initialize_git_repo "$project_path"
+
+  invoke_openplate "$case_id" '01-init-first.log' '0' '' -c "$(to_windows_path "$config_path")" init --project-root "$(to_windows_path "$project_path")" --dest-folder 'first-root' "$first_source_url" >/dev/null
+  invoke_openplate "$case_id" '02-init-composite.log' '0' '' -c "$(to_windows_path "$config_path")" init --project-root "$(to_windows_path "$project_path")" --dest-folder 'composite-root' "$composite_source_url" >/dev/null
+
+  local shared_root_path="$project_path/shared/root.txt"
+  local tracked_marker_path="$project_path/shared/tracked-shared.txt"
+  local service_a_marker_path="$project_path/shared/service-a-shared.txt"
+  local service_b_marker_path="$project_path/shared/service-b-shared.txt"
+  local service_a_path="$project_path/service-a/a.txt"
+  local service_b_path="$project_path/service-b/b.txt"
+  local project_config_path="$project_path/.openplate.project.yaml"
+
+  assert_file_contains "$tracked_marker_path" 'marker=tracked-shared'
+  assert_path_missing "$service_a_marker_path"
+  assert_path_missing "$service_b_marker_path"
+
+  clear_readonly_file "$shared_root_path"
+  clear_readonly_file "$tracked_marker_path"
+  rm -f "$shared_root_path" "$tracked_marker_path" "$service_a_path" "$service_b_path"
+
+  assert_path_missing "$shared_root_path"
+  assert_path_missing "$tracked_marker_path"
+  assert_path_missing "$service_a_path"
+  assert_path_missing "$service_b_path"
+
+  local update_log
+  update_log="$(invoke_openplate "$case_id" '03-update-shared-reuse.log' '0' '' -d -c "$(to_windows_path "$config_path")" update --project-root "$(to_windows_path "$project_path")" --update-missing)"
+
+  assert_file_contains "$shared_root_path" 'shared-root'
+  assert_file_contains "$tracked_marker_path" 'marker=tracked-shared'
+  assert_file_contains "$service_a_path" 'shared-worker'
+  assert_file_contains "$service_b_path" 'shared-worker'
+  assert_path_missing "$service_a_marker_path"
+  assert_path_missing "$service_b_marker_path"
+  assert_fixed_string_count "$update_log" "Getting Source from url: $shared_source_url" '1'
+
+  local sibling_template_count
+  sibling_template_count="$(count_templates_for_source_dest "$project_config_path" "$shared_source_url" '.')"
+  sibling_template_count="$(printf '%s' "$sibling_template_count" | tr -d '\r\n')"
+  if [[ "$sibling_template_count" != '1' ]]; then
+    echo "Expected exactly one tracked shared sibling after update reuse, found: $sibling_template_count" >&2
+    exit 1
+  fi
+
+  write_summary "$case_id" \
+    "Catalog repo: $repo_path" \
+    "Shared sibling source: $shared_source_url" \
+    "Initial root source: $first_source_url" \
+    "Composite root source: $composite_source_url" \
+    'Validated update-time reuse of an already tracked shared sibling at . by deleting template-managed files, recreating only the tracked shared marker artifact, preserving one tracked sibling entry, and opening the shared sibling source once for the full update command.'
+}
+
+run_case7() {
+  local case_id='case-7'
+  reset_case_folders "$case_id"
+
+  local repo_path
+  repo_path="$(new_local_catalog_repo "$case_id")"
+  local repo_url
+  repo_url="$(file_url "$repo_path")"
+  local first_source_url="${repo_url}?path=sibling-first-template#main"
+  local composite_source_url="${repo_url}?path=sibling-overwrite-root-template#main"
+  local shared_source_url="${repo_url}?path=sibling-shared-template#main"
+
+  local case_work="$WORK_ROOT/$case_id"
+  local config_path="$case_work/openplate-config.yaml"
+  local project_path="$case_work/verify-shared-project"
+  ensure_dir "$project_path"
+  initialize_git_repo "$project_path"
+
+  invoke_openplate "$case_id" '01-init-first.log' '0' '' -c "$(to_windows_path "$config_path")" init --project-root "$(to_windows_path "$project_path")" --dest-folder 'first-root' "$first_source_url" >/dev/null
+  invoke_openplate "$case_id" '02-init-composite.log' '0' '' -c "$(to_windows_path "$config_path")" init --project-root "$(to_windows_path "$project_path")" --dest-folder 'composite-root' "$composite_source_url" >/dev/null
+
+  local shared_root_path="$project_path/shared/root.txt"
+  local tracked_marker_path="$project_path/shared/tracked-shared.txt"
+  local service_a_marker_path="$project_path/shared/service-a-shared.txt"
+  local service_b_marker_path="$project_path/shared/service-b-shared.txt"
+  local project_config_path="$project_path/.openplate.project.yaml"
+
+  local verify_ok_log
+  verify_ok_log="$(invoke_openplate "$case_id" '03-verify-shared-pass.log' '0' '' -d -c "$(to_windows_path "$config_path")" verify --project-root "$(to_windows_path "$project_path")")"
+  assert_fixed_string_count "$verify_ok_log" "Getting Source from url: $shared_source_url" '1'
+  assert_file_contains "$verify_ok_log" 'Done!'
+
+  clear_readonly_file "$shared_root_path"
+  clear_readonly_file "$tracked_marker_path"
+  rm -f "$shared_root_path" "$tracked_marker_path"
+  assert_path_missing "$shared_root_path"
+  assert_path_missing "$tracked_marker_path"
+
+  local verify_fail_log
+  verify_fail_log="$(invoke_openplate "$case_id" '04-verify-shared-missing.log' '1' '' -d -c "$(to_windows_path "$config_path")" verify --project-root "$(to_windows_path "$project_path")")"
+
+  assert_fixed_string_count "$verify_fail_log" "Getting Source from url: $shared_source_url" '1'
+  assert_fixed_string_count "$verify_fail_log" 'shared/root.txt missing' '1'
+  assert_fixed_string_count "$verify_fail_log" 'shared/tracked-shared.txt missing' '1'
+  assert_file_not_contains "$verify_fail_log" 'shared/service-a-shared.txt missing'
+  assert_file_not_contains "$verify_fail_log" 'shared/service-b-shared.txt missing'
+
+  local sibling_template_count
+  sibling_template_count="$(count_templates_for_source_dest "$project_config_path" "$shared_source_url" '.')"
+  sibling_template_count="$(printf '%s' "$sibling_template_count" | tr -d '\r\n')"
+  if [[ "$sibling_template_count" != '1' ]]; then
+    echo "Expected exactly one tracked shared sibling after verify reuse, found: $sibling_template_count" >&2
+    exit 1
+  fi
+
+  write_summary "$case_id" \
+    "Catalog repo: $repo_path" \
+    "Shared sibling source: $shared_source_url" \
+    "Initial root source: $first_source_url" \
+    "Composite root source: $composite_source_url" \
+    'Validated verify-time reuse of an already tracked shared sibling at . by passing once on the intact tree, then reporting each deleted tracked shared file once while never referencing branch-specific sibling marker files and opening the shared sibling source once per verify command.'
+}
+
 bootstrap_sandbox_if_needed
 
 ensure_dir "$WORK_ROOT"
 ensure_dir "$ARTIFACTS_ROOT"
 
 if [[ "$CASE" == 'all' ]]; then
-  cases_to_run=(case-1 case-2 case-3 case-4)
+  cases_to_run=(case-1 case-2 case-3 case-4 case-5 case-6 case-7)
 else
   cases_to_run=("$CASE")
 fi
@@ -898,6 +1162,9 @@ for case_id in "${cases_to_run[@]}"; do
     case-2) run_case2 ;;
     case-3) run_case3 ;;
     case-4) run_case4 ;;
+    case-5) run_case5 ;;
+    case-6) run_case6 ;;
+    case-7) run_case7 ;;
   esac
   sync_case_outputs_to_source "$case_id"
 done

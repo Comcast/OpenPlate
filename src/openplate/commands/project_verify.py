@@ -21,6 +21,7 @@ import sys
 
 from openplate.cfg import project_config
 from openplate.cfg.open_plate_settings import OpenPlateSettings, OpenPlateRuntimeSettings
+from openplate.sources.source_cache import CommandTemplateSourceCache, close_command_template_source_cache
 from openplate.walk.source_template_recursive_walk import VerifyWalkOptions, source_template_recursive_walk_all
 
 
@@ -47,24 +48,29 @@ async def run(
         os.path.join(options.destination, project_config.project_config_file_name)
     )
 
-    (result, found_changes, sha) = await source_template_recursive_walk_all(
-        settings,
-        runtime_settings,
-        options.destination,
-        VerifyWalkOptions(
+    source_cache = CommandTemplateSourceCache(settings)
+    try:
+        (result, found_changes, sha) = await source_template_recursive_walk_all(
+            settings,
+            runtime_settings,
+            options.destination,
+            VerifyWalkOptions(
+                False,
+                True
+            ),
+            config_project,
+            settings.allow_template_commands,
             False,
-            True
-        ),
-        config_project,
-        settings.allow_template_commands,
-        False,
-        True,
-        False,
-        False,
-        False,
-        not runtime_settings.is_automation,
-        True
-    )
+            True,
+            False,
+            False,
+            False,
+            not runtime_settings.is_automation,
+            True,
+            source_cache=source_cache,
+        )
+    finally:
+        close_command_template_source_cache(source_cache)
 
     if runtime_settings.is_automation:
         print(f"{sha}")
