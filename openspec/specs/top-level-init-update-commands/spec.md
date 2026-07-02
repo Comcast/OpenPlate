@@ -49,11 +49,11 @@ OpenPlate SHALL continue to accept `openplate project init` and `openplate proje
 - **THEN** OpenPlate accepts the renamed shared root-selection option on the legacy command form
 
 ### Requirement: Top-level help advertises only the new primary commands
-OpenPlate top-level help SHALL advertise `init`, `update`, and `verify` as the supported project workflow commands. The legacy `project` command MUST remain functional but MUST NOT appear in top-level help output.
+OpenPlate top-level help SHALL advertise `init`, `update`, `verify`, and `info` as the supported project workflow commands. The legacy `project` command MUST remain functional but MUST NOT appear in top-level help output.
 
-#### Scenario: Top-level help shows init, update, and verify
+#### Scenario: Top-level help shows init, update, verify, and info
 - **WHEN** a user runs `openplate --help`
-- **THEN** the help output lists `init`, `update`, and `verify` as available commands
+- **THEN** the help output lists `init`, `update`, `verify`, and `info` as available commands
 
 #### Scenario: Top-level help hides project compatibility command
 - **WHEN** a user runs `openplate --help`
@@ -109,4 +109,26 @@ OpenPlate SHALL reject `--project-folder` on top-level and legacy init, update, 
 - **WHEN** a user runs `openplate project verify --project-folder ./workspace`
 - **THEN** OpenPlate rejects the command
  - **THEN** the error message tells the user to use `--project-root`
+
+### Requirement: Top-level info is the primary inspection command
+OpenPlate SHALL provide `openplate info` as a first-class top-level command for project inspection. `openplate info` MUST expose the shared project-runtime options required to inspect a project.
+
+The shared root-selection option for info SHALL be named `--project-root`.
+
+#### Scenario: Top-level info parses successfully
+- **WHEN** a user runs `openplate info`
+- **THEN** OpenPlate parses the command successfully
+- **AND** OpenPlate routes the invocation through the project-info execution flow
+
+#### Scenario: Top-level info accepts the shared root option
+- **WHEN** a user runs `openplate info --project-root ./workspace`
+- **THEN** OpenPlate accepts the shared project-runtime option on the top-level info command
+
+### Requirement: Legacy project info command remains supported
+OpenPlate SHALL continue to accept `openplate project info` as a backward-compatible command form. The legacy command MUST preserve the behavior and option set of `openplate info`, including the shared `--project-root` option.
+
+#### Scenario: Legacy project info remains valid
+- **WHEN** a user runs `openplate project info --project-root ./workspace`
+- **THEN** OpenPlate parses the command successfully
+- **AND** OpenPlate performs the same inspection behavior as `openplate info --project-root ./workspace`
 
