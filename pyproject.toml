@@ -23,7 +23,7 @@ dependencies = [
     "PyYAML ~= 6.0",
     "python-liquid ~= 2.2",
     "semver ~= 3.0.4",
-    "typing_extensions ~= 4.12.2"
+    "typing_extensions >= 4.12.2"
 ]
 
 [project.urls]
