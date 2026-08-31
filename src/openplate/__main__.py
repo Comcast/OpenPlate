@@ -151,7 +151,13 @@ def hide_subparser_from_help(subparsers, command_name):
 
 
 def create_arg_parser(args):
-    arg_parser = argparse.ArgumentParser()
+    arg_parser = argparse.ArgumentParser(
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="Documentation:\n"
+               "  Commands:          https://github.com/Comcast/OpenPlate/blob/main/docs/commands.md\n"
+               "  Template building: https://github.com/Comcast/OpenPlate/blob/main/docs/templates.md\n"
+               "  Source code:       https://github.com/comcast/openplate\n",
+    )
     arg_parser.set_defaults(command=None)
     arg_parser.add_argument("-c", "--config-file", type=str, required=False, help="Configuration file to use (yaml)")
     arg_parser.add_argument("-d", "--debug", required=False,
