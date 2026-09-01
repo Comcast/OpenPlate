@@ -225,8 +225,8 @@ class CommonRecursiveWalkListener(RecursiveWalkListener):
 
                         logging.debug(f"multiplexing file: {item_path}")
 
-
                         project_path = str(Path(self._project_root).joinpath(item_path).resolve())
+                        os.makedirs(os.path.dirname(project_path), exist_ok=True)
                         new_file_exists = os.path.exists(project_path)
 
                         # swap out template options temporarily
