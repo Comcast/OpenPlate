@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=77.0.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.dynamic]
@@ -13,6 +13,8 @@ authors = [
 ]
 description = "A cross platform template tool"
 readme = "readme.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.12"
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -29,6 +31,8 @@ dependencies = [
 [project.urls]
 "Homepage" = "https://github.com/Comcast/OpenPlate"
 "Bug Tracker" = "https://github.com/Comcast/OpenPlate/issues"
+"Source" = "https://github.com/Comcast/OpenPlate"
+"Documentation" = "https://github.com/Comcast/OpenPlate/tree/main/docs"
 
 [project.optional-dependencies]
 dev = [

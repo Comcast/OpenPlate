@@ -1,22 +1,23 @@
 #!/bin/bash
 ##
-##              Copyright 2025 Comcast Cable Communications Management, LLC
+## Copyright 2025 Comcast Cable Communications Management, LLC
 ##
-##              Licensed under the Apache License, Version 2.0 (the "License");
-##              you may not use this file except in compliance with the License.
-##              You may obtain a copy of the License at
+## Licensed under the Apache License, Version 2.0 (the "License");
+## you may not use this file except in compliance with the License.
+## You may obtain a copy of the License at
 ##
-##              http://www.apache.org/licenses/LICENSE-2.0
+## http://www.apache.org/licenses/LICENSE-2.0
 ##
-##              Unless required by applicable law or agreed to in writing, software
-##              distributed under the License is distributed on an "AS IS" BASIS,
-##              WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-##              See the License for the specific language governing permissions and
-##              limitations under the License.
+## Unless required by applicable law or agreed to in writing, software
+## distributed under the License is distributed on an "AS IS" BASIS,
+## WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+## See the License for the specific language governing permissions and
+## limitations under the License.
 ##
-##              SPDX-License-Identifier: Apache-2.0
+## SPDX-License-Identifier: Apache-2.0
 ##
-##              This product includes software developed at Comcast (https://www.comcast.com/).##
+## This product includes software developed at Comcast (https://www.comcast.com/).
+##
 
 
 # Define a cleanup function
@@ -58,8 +59,6 @@ fi
 echo "Setting up SSH----------"
 export REAL_USER=`whoami`
 echo setting user to $REAL_USER
-# print the getent passwd output 
-echo `getent passwd`
 export REAL_HOME=`getent passwd | grep "^$REAL_USER:" | cut -d ":" -f 6`
 echo setting $HOME to $REAL_HOME
 export HOME=$REAL_HOME
