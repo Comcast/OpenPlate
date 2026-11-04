@@ -3,6 +3,7 @@
 Please see the following links for more information:
 
 - [Installation](installation.md)
+- [Building the Python Package](building-python.md)
 - [Command Reference](commands.md)
 - [Creating Templates](templates.md)
 - [Purpose and Architecture](purpose.md)
